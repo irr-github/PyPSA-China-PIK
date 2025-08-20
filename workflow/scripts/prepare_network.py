@@ -320,10 +320,12 @@ def add_conventional_generators(
             "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
         )
         ramps = ramps.get("coal", {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan})
+        p_max_pu = ramps.get("p_max_pu", 0.9)
+        # adjust ramp to snapshots since ramp is per timestep
         ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
         # this is the non sector-coupled approach
         # for industry may have an issue in that coal feeds to chem sector
-        # no coal in Beijing - political decision
+        # no coal in Beijing - political decision. In future could add PM2.5 and limits for them
         network.add(
             "Generator",
             nodes[nodes != "Beijing"],
@@ -333,12 +335,13 @@ def add_conventional_generators(
             p_nom_extendable=True,
             efficiency=costs.at["coal", "efficiency"],
             marginal_cost=costs.at["coal", "marginal_cost"],
+            # TODO CHECK THIS
             capital_cost=costs.at["coal", "efficiency"]
             * costs.at["coal", "capital_cost"],  # NB: capital cost is per MWel
             lifetime=costs.at["coal", "lifetime"],
             ramp_limit_up=ramps["ramp_limit_up"],
             ramp_limit_down=ramps["ramp_limit_down"],
-            p_max_pu=0.9,  # planned and forced outages
+            p_max_pu=p_max_pu,  # planned and forced outages
         )
 
         if "coal-CCS" in config["Techs"]["conv_techs"]:
@@ -351,6 +354,7 @@ def add_conventional_generators(
                 p_nom_extendable=True,
                 efficiency=costs.at["coal ccs", "efficiency"],
                 marginal_cost=costs.at["coal ccs", "marginal_cost"],
+                # TODO CHECK THIS
                 capital_cost=costs.at["coal ccs", "efficiency"]
                 * costs.at["coal ccs", "capital_cost"],  # NB: capital cost is per MWel
                 lifetime=costs.at["coal ccs", "lifetime"],
@@ -469,6 +473,7 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
             * costs.at["methanation", "efficiency"],
             # TODO fix me
             lifetime=costs.at["methanation", "lifetime"],
+            # TODO fix this hardcoded @beijingzyl @irr-github
             marginal_cost=(400 - 5 * (int(cost_year) - 2020))
             * costs.at["gas", "co2_emissions"]
             * costs.at["methanation", "efficiency"],
@@ -963,6 +968,8 @@ def add_heat_coupling(
         )
 
     if "CHP coal" in config["Techs"]["conv_techs"]:
+        # note don't have newbuild option for CHP coal w CCS
+
         logger.info("Adding CHP coal to network")
 
         network.add(
@@ -985,10 +992,12 @@ def add_heat_coupling(
             marginal_cost=costs.at["coal", "fuel"],
         )
 
+        # TODO add district heat copper connect between Hebei and Beijing 
+        # TODO add pmaxpu from config and ramp
         # NOTE generator | boiler is a key word for the constraint
         network.add(
             "Link",
-            name=nodes,
+            name=nodes[nodes != "Beijing"],
             suffix=" CHP coal generator",
             bus0=nodes + " coal fuel",
             bus1=nodes,
@@ -998,6 +1007,7 @@ def add_heat_coupling(
             capital_cost=costs.at["central coal CHP", "efficiency"]
             * costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
             efficiency=costs.at["central coal CHP", "efficiency"],
+            # TODO CHECK this gives realistic power to heat ratios for china
             c_b=costs.at["central coal CHP", "c_b"],
             p_nom_ratio=1.0,
             lifetime=costs.at["central coal CHP", "lifetime"],
@@ -1006,7 +1016,7 @@ def add_heat_coupling(
 
         network.add(
             "Link",
-            nodes,
+            nodes[nodes!="Beijing"],
             suffix=" central CHP coal boiler",
             bus0=nodes + " coal fuel",
             bus1=nodes + " central heat",
@@ -1401,7 +1411,6 @@ def prepare_network(
             lifetime=costs.at["nuclear", "lifetime"],
         )
 
-    # TODO add coal CC? no retrofit option
 
     if "PHS" in config["Techs"]["store_techs"]:
         # TODO soft-code path
@@ -1535,6 +1544,103 @@ def prepare_network(
     return network
 
 
+# TODO add coal CCS retrofit option
+def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
+    """
+    Optional retrofit of brownfield coal power / CHP with CCS (Carbon Capture and Storage) technology. 
+    Requires additional constraint in solve_network.extra_functionality
+    Args:
+        n (pypsa.Network): The PyPSA network object to modify.
+        costs (pd.DataFrame): techno-economic data.
+        plan_year (int): The year in which the retrofit is planned, used to set build year and calculate remaining lifetime
+    """
+    config = n.config
+
+    ramps = config.get(
+        "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
+    )
+    ramps = ramps.get("coal", {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan})
+    p_max_pu = ramps.get("p_max_pu", 0.9)
+    # adjust ramp to snapshots since ramp is per timestep
+    ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
+    
+    coal_brownfield = n.generators.query("carrier == 'coal' & p_nom_extendable == False")
+    n.add(
+        "Generator",
+        name=coal_brownfield.index+ "-ccs retrofit",
+        bus=coal_brownfield.bus.values,
+        carrier="coal ccs",
+        p_nom_extendable=True,
+        p_nom_max=coal_brownfield.p_nom.values,
+        p_max_pu=p_max_pu,
+        ramp_limit_up=ramps["ramp_limit_up"],
+        ramp_limit_down=ramps["ramp_limit_down"],
+        build_year=plan_year,
+        lifetime=plan_year - coal_brownfield.build_year.values,
+        capital_cost=costs.at["retrofit", "capital_cost"],
+        marginal_cost=costs.at["coal ccs", "marginal_cost"],
+        efficiency=costs.at["coal ccs", "efficiency"],
+    )
+
+    coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom_extendable == False")
+    chp_nodes = coal_CHP_brownfield.bus1
+    ccs_fuel_bus = chp_nodes + "coal fuel ccs"
+    n.add(
+        "Bus",
+        ccs_fuel_bus,
+        x=chp_nodes.map(n.buses.x),
+        y=chp_nodes.map(n.buses.y),
+        carrier="coal ccs",
+        location=chp_nodes.map(n.buses.location),
+    )
+
+    n.add(
+        "Generator",
+        ccs_fuel_bus,
+        bus=ccs_fuel_bus,
+        carrier="coal ccs",
+        p_nom_extendable=False,
+        p_nom=1e8,
+        marginal_cost=costs.at["coal", "fuel"],
+    )
+
+    n.add(
+        "Link",
+        name=coal_CHP_brownfield.index + "-ccs retrofit",
+        bus0=ccs_fuel_bus,
+        bus1=chp_nodes,
+        p_nom_extendable=True,
+        p_nom_max=coal_CHP_brownfield.p_nom.values,
+        build_year=plan_year,
+        lifetime=plan_year - coal_CHP_brownfield.build_year.values,
+        marginal_cost=costs.at["central coal CHP", "efficiency"]
+        * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
+        # TODO check
+        capital_cost=costs.at["retrofit", "capital_cost"],
+        * costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
+        efficiency=costs.at["central coal CHP", "efficiency"],
+        # TODO CHECK this gives realistic power to heat ratios for china
+        c_b=costs.at["central coal CHP", "c_b"],
+        p_nom_ratio=1.0,
+        carrier="CHP coal CCS",
+    )
+
+    boiler_brownfield = n.links.query("carrier == 'coal boiler central' and p_nom_extendable == False")
+    network.add(
+        "Link",
+        boiler_brownfield.index + "-ccs retrofit",
+        bus0=ccs_fuel_bus,
+        bus1=chp_nodes + " central heat",
+        carrier="CHP coal CCS",
+        p_nom_extendable=True,
+        marginal_cost=costs.at["central coal CHP", "efficiency"]
+        * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
+        efficiency=costs.at["central coal CHP", "efficiency"]
+        / costs.at["central coal CHP", "c_v"],
+        lifetime=costs.at["central coal CHP", "lifetime"],
+        )
+
+
 if __name__ == "__main__":
 
     # Detect running outside of snakemake and mock snakemake for testing
@@ -1592,6 +1698,8 @@ if __name__ == "__main__":
     network = prepare_network(
         snakemake.config, costs, snapshots, biomass_potential, paths=input_paths
     )
+    if config["Techs"].get("coal_ccs_retrofit", False):
+        add_coal_retrofit(network, costs, cost_year)
     sanitize_carriers(network, snakemake.config)
 
     outp = snakemake.output.network_name

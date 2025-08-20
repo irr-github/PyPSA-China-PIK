@@ -231,6 +231,7 @@ plotting:
     CHP gas generator: '#8f6e6a'
     CHP gas boiler: '#8f6e6a'
     CHP CC: '#634643'
+    coal CHP-CCS: '#634643'
     urban central gas CHP CC: '#6e4e4c'
     CHP heat: '#8a5751'
     CHP electric: '#8a5751'
@@ -417,6 +418,7 @@ plotting:
     coal cc: "Coal with carbon capture"
     coal ccs: "Coal with carbon capture"
     coal-CCS: "Coal with Carbon Capture"
+    CHP coal-CCS: "Coal CHP with Carbon Capture"
     coal-heat: "Coal Boiler"
     hydro: "Reservoir & Dam"
     H2 fuel cell: "H2 Fuel Cell"
@@ -455,6 +457,7 @@ plotting:
   - coal boiler central
   - gas
   - CHP coal
+  - CHP coal-CCS
   - gas CCGT
   - CCGT-CCS
   - gas CCGT-CCS 
