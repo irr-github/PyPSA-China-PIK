@@ -10,7 +10,6 @@ Example:
 # -*- coding: utf-8 -*-
 import os
 import yaml
-import sys
 import logging
 
 import setup  # sets up paths for standalone

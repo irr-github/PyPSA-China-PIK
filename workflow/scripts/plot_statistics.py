@@ -595,7 +595,7 @@ if __name__ == "__main__":
         fig.savefig(os.path.join(outp_dir, "LCOE.png"))
 
     if "mv_minus_lcoe" in stats_list:
-        if not "lcoe" in stats_list:
+        if "lcoe" not in stats_list:
             rev_costs = calc_lcoe(n, groupby=None)
         ds = rev_costs["profit_pu"].copy()
         ds.attrs = {"name": "MV - LCOE", "unit": "€/MWh"}

@@ -13,8 +13,6 @@ import xarray as xr
 import pandas as pd
 
 from pypsa.descriptors import get_switchable_as_dense as get_as_dense
-import os
-
 
 from _pypsa_helpers import store_duals_to_network
 from _helpers import configure_logging, mock_snakemake, setup_gurobi_tunnel_and_env, ConfigManager

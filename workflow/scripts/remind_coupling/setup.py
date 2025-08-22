@@ -20,7 +20,7 @@ def setup_paths():
 
 setup_paths()
 # needs to be imported after setup_paths
-from _helpers import mock_snakemake
+from _helpers import mock_snakemake # noqa: E402
 
 
 def _mock_snakemake(rule_name, **kwargs) -> object:

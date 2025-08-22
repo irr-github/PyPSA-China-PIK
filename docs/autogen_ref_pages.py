@@ -82,7 +82,7 @@ def make_literate_nav():
 
 def write_literate_nav(
     lit_nav: mkdocs_gen_files.Nav,
-    prepend: ["Home: index.md\n", "Tutorials: tutorials.md\n", "Reference:\n"],
+    prepend=["Home: index.md\n", "Tutorials: tutorials.md\n", "Reference:\n"],
     fname="reference_nav.yml",
 ):
     """write the literate-nav style nav for mkdocs. The nav of mkdocs.yml then should point to the corresponding fil

@@ -15,7 +15,7 @@ from rpycpl.etl import ETL_REGISTRY, Transformation, register_etl
 from generic_etl import ETLRunner
 
 # import needed for the capacity method to be registered
-from rpycpl import capacities_etl
+from rpycpl import capacities_etl # noqa: F401
 
 import setup  # sets up paths
 from readers import read_yearly_load_projections

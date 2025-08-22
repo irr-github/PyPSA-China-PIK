@@ -22,8 +22,6 @@ import re
 import os.path
 from os import PathLike
 
-import sys
-
 import setup  # sets up paths
 from _helpers import configure_logging
 
