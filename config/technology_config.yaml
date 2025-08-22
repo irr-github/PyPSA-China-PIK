@@ -49,9 +49,10 @@ fossil_ramps:
   coal:
     ramp_limit_up: 0.5 # fraction of p_nom per hour
     ramp_limit_down: 0.5 # fraction of p_nom per hour
+    p_max_pu : 0.9 # forced/planned outage
 # overly simplistic to not have unit commitment
 nuclear_reactors:
-  p_max_pu: 0.88 # fraction of p_nom, after IEAE
+  p_max_pu: 0.88 # fraction of p_nom, (outages) after IEAE
   p_min_pu: 0.7 # fraction of p_nom
 costs:
   discountrate: 0.06

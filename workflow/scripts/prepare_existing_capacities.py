@@ -36,6 +36,7 @@ CARRIER_MAP= {
         "coal boiler": "central coal boiler",
         "ground heat pump": "central ground-sourced heat pump",
         "nuclear": "nuclear",
+        "PHS": "PHS"
     }
 
 

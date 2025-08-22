@@ -281,6 +281,7 @@ rule prepare_baseyear_capacities:
     resources: mem_mb=2000
     script: "scripts/prepare_existing_capacities.py"
 
+# TODO single prepare_networks rule call for all modes
 
 # make sure the params will appear in the profile names
 resource_class_cfg = {tech: config["renewable"][tech]["resource_classes"] for tech in config["renewable"]}
@@ -291,6 +292,7 @@ if config["foresight"] in ["overnight"]:
 
     rule prepare_networks:
         input:
+            edge_path = config["edge_paths"].get(config["scenario"]["topology"], None),
             heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
             solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5",
@@ -313,8 +315,8 @@ if config["foresight"] in ["overnight"]:
         paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities_{planning_horizons}.csv'
     rule add_existing_baseyear:
         params:
-            baseyear = BASEYEAR,
             add_baseyear_to_assets = False,
+            vre_carriers = ["solar", "onwind", "offwind"]
         input:
             network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
@@ -326,18 +328,6 @@ if config["foresight"] in ["overnight"]:
         resources: mem_mb=2000
         script: "scripts/add_existing_baseyear.py"
 
-    rule solve_networks:
-        params:
-            solving = config["solving"],
-        input:
-            network_name=RESULTS_DIR+ f'/prenetworks{add_brownfield}/' +'ntwk_{planning_horizons}.nc',
-        output:
-            network_name=RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}.nc'
-        log:
-            solver = LOG_DIR + "/solve_network_postnetworks/ntwk_{planning_horizons}.log"
-        threads: 4
-        resources: mem_mb=35000
-        script: "scripts/solve_network.py"
 
 elif config["foresight"] == "myopic" and IS_REMIND_COUPLED:
     raise ValueError("Invalid pathway combination (REMIND coupling and myopic)")
@@ -347,6 +337,7 @@ elif config["foresight"] == "myopic":
     add_brownfield = True
     rule prepare_networks:
         input:
+            edge_path = config["edge_paths"].get(config["scenario"]["topology"], None),
             heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
             solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5",
@@ -363,58 +354,69 @@ elif config["foresight"] == "myopic":
         resources: mem_mb=10000
         script: "scripts/prepare_network.py"
 
-    def previous_horizon(wildcards) -> os.PathLike:
+    # TODO switch to partial? Move to path provider?
+    def find_last_solution(wildcards) -> os.PathLike:
         """find previous solution"""
         yr = int(wildcards.planning_horizons)
         years =  [int(y) for y in config["scenario"]["planning_horizons"]]
         prev_idx = max(0, years.index(yr)-1)
         return RESULTS_DIR+ f"/postnetworks/ntwk_{years[prev_idx]}.nc"
 
+    def get_myopic_capacity(wildcards) -> os.PathLike:
+        """find myopic capacity"""
+        yr = int(wildcards.planning_horizons)
+
+        if yr == BASEYEAR:
+            return DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
+        else:
+            years =  [int(y) for y in config["scenario"]["planning_horizons"]]
+            prev_idx = max(0, years.index(yr)-1)
+            return f'/prenetworks-brownfield/input_capacities_{years[prev_idx]}.csv'
+
     rule update_brownfield_with_solved:
-    input:
-        network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
-        # costs="resources/data/costs/costs_{planning_horizons}.csv",
-        # **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}.nc"
-        #     for tech in config['renewable']}
-    output:
-        network_name = RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}.nc',
-    threads: 4
-    resources: mem_mb=10000
-    script: "scripts/add_previous_solution.py"
+        """ update installed capacity iteratively with next solution"""
+
+        input:
+            network=find_last_solution,
+            installed_capacities = get_myopic_capacity, # last solution capacity or data
+        output:
+            myopic_capacities = RESULTS_DIR + '/prenetworks-brownfield/input_capacities_{planning_horizons}.csv',
+            edges = RESULTS_DIR + '/prenetworks-brownfield/input_edges_{planning_horizons}.csv',
+        script: "scripts/prepare_myopic_capacity.py"
 
     # dummy for snakemake
-    paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities_{planning_horizons}.csv'
     rule add_existing_baseyear_myopic:
         params:
             baseyear = BASEYEAR,
             add_baseyear_to_assets = False,
         input:
-            solved_network=previous_horizon,
+            # solved_network=previous_horizon,
+            edges = '/prenetworks-brownfield/input_edges_{plannng_horizons}.csv'
             network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
             cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5",
-            installed_capacities = path_manager.infrastructure() + '/capacities_{planning_horizons}.csv',
+            installed_capacities = get_myopic_capacity,
         output: RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}.nc'
         threads: 1
         resources: mem_mb=2000
-        script: "scripts/add_existing_baseyear.py"
+        script: "scripts/add_existing_baseyear_myopic.py"
         # wildcard_constraints:
         #     planning_horizons=config['scenario']['planning_horizons'][0] #only applies to baseyear
 
 
-    rule solve_networks:
-        params:
-            solving = config["solving"],
-        input:
-            network_name=RESULTS_DIR+ f'/prenetworks_myopic/' +'ntwk_{planning_horizons}.nc',
-        output:
-            network_name=RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}.nc'
-        log:
-            solver = LOG_DIR + "/solve_network_postnetworks/ntwk_{planning_horizons}.log"
-        threads: 4
-        resources: mem_mb=35000
-        script: "scripts/solve_network.py"
 
+rule solve_networks:
+    params:
+        solving = config["solving"],
+    input:
+        network_name=RESULTS_DIR+ f'/prenetworks{add_brownfield}/' +'ntwk_{planning_horizons}.nc',
+    output:
+        network_name=RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}.nc'
+    log:
+        solver = LOG_DIR + "/solve_network_postnetworks/ntwk_{planning_horizons}.log"
+    threads: 4
+    resources: mem_mb=35000
+    script: "scripts/solve_network.py"
 
 # run with `snakemake results/dag/rules_graph.png -f`
 rule dag:
