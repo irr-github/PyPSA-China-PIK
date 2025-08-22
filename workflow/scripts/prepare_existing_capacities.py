@@ -22,6 +22,22 @@ logger = logging.getLogger(__name__)
 idx = pd.IndexSlice
 spatial = SimpleNamespace()
 
+# TODO further centralise
+CARRIER_MAP= {
+        "coal": "coal power plant",
+        "CHP coal": "central coal CHP",
+        "CHP gas": "central gas CHP",
+        "OCGT": "gas OCGT",
+        "CCGT": "gas CCGT",
+        "solar": "solar",
+        "solar thermal": "central solar thermal",
+        "onwind": "onwind",
+        "offwind": "offwind",
+        "coal boiler": "central coal boiler",
+        "ground heat pump": "central ground-sourced heat pump",
+        "nuclear": "nuclear",
+    }
+
 
 def determine_simulation_timespan(config: dict, year: int) -> int:
     """Determine the simulation timespan in years (so the network object is not needed)
@@ -61,22 +77,8 @@ def read_existing_capacities(paths_dict: dict[str, os.PathLike], techs: list) ->
     Returns:
         pd.DataFrame: DataFrame with existing capacities
     """
-    # TODO fix centralise (make a dict from start?)
-    carrier = {
-        "coal": "coal power plant",
-        "CHP coal": "central coal CHP",
-        "CHP gas": "central gas CHP",
-        "OCGT": "gas OCGT",
-        "CCGT": "gas CCGT",
-        "solar": "solar",
-        "solar thermal": "central solar thermal",
-        "onwind": "onwind",
-        "offwind": "offwind",
-        "coal boiler": "central coal boiler",
-        "ground heat pump": "central ground-sourced heat pump",
-        "nuclear": "nuclear",
-    }
-    carrier = {k: v for k, v in carrier.items() if k in techs}
+
+    carrier = {k: v for k, v in CARRIER_MAP.items() if k in techs}
 
     df_agg = pd.DataFrame()
     for tech in carrier:
@@ -144,8 +146,8 @@ def fix_existing_capacities(
         existing_df.drop(to_drop, inplace=True)
 
     existing_df["lifetime"] = existing_df.DateOut - existing_df["grouping_year"]
-
     existing_df.rename(columns={"cluster_bus": "bus"}, inplace=True)
+
     return existing_df
 
 

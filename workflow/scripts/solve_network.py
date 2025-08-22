@@ -490,6 +490,65 @@ def add_remind_paid_off_constraints(n: pypsa.Network) -> None:
             )
 
 
+# TODO rewrite and remove planning horizons
+def add_retrofit_constraints(n):
+    """
+    Add constraints to ensure retrofit capacity is linked to the original capacity
+    Args:
+        n (pypsa.Network): the pypsa network object to which's model the constraints are added
+    """
+    p_nom_max = pd.read_csv("resources/data/p_nom/p_nom_max_cc.csv", index_col=0)
+    p_nom_max = pd.read_csv("resources/data/p_nom/p_nom_max_cc.csv", index_col=0)
+    planning_horizon = snakemake.wildcards.planning_horizons
+    for year in range(int(planning_horizon) - 40, 2021, 5):
+        coal = (
+            n.generators[
+                (n.generators.carrier == "coal power plant") & (n.generators.build_year == year)
+            ]
+            .query("p_nom_extendable")
+            .index
+        )
+        Bus = (
+            n.generators[
+                (n.generators.carrier == "coal power plant") & (n.generators.build_year == year)
+            ]
+            .query("p_nom_extendable")
+            .bus.values
+        )
+        coal_retrofit = (
+            n.generators[
+                n.generators.index.str.contains("retrofit")
+                & (n.generators.build_year == year)
+                & n.generators.bus.isin(Bus)
+            ]
+            .query("p_nom_extendable")
+            .index
+        )
+        coal_retrofitted = (
+            n.generators[
+                n.generators.index.str.contains("retrofit")
+                & (n.generators.build_year == year)
+                & n.generators.bus.isin(Bus)
+            ]
+            .query("~p_nom_extendable")
+            .groupby("bus")
+            .sum()
+            .p_nom_opt
+        )
+
+        lhs = (
+            n.model["Generator-p_nom"].loc[coal]
+            + n.model["Generator-p_nom"].loc[coal_retrofit]
+            - (
+                p_nom_max[str(year)].loc[Bus]
+                - coal_retrofitted.reindex(p_nom_max[str(year)].loc[Bus].index, fill_value=0)
+            ).values
+        )
+
+        n.model.add_constraints(lhs == 0, name="Generator-coal-retrofit-" + str(year))
+
+
+
 def add_operational_reserve_margin(n: pypsa.network, config):
     """
     Build operational reserve margin constraints based on the formulation given in
@@ -617,6 +676,11 @@ def extra_functionality(n: pypsa.Network, _) -> None:
         logger.info("Adding operational reserve margin constraints")
         add_operational_reserve_margin(n, config)
 
+    # TODO Potentially exclude base year but CO2 price will be low
+    if config["Techs"].get("coal_ccs_retrofit", False):
+        logger.info("Adding retrofit constraints for coal CCS")
+        add_retrofit_constraints(n)
+
     logger.info("Added extra functionality to the network model")
 
 
@@ -734,10 +798,7 @@ if __name__ == "__main__":
     # HACK to replace pytest monkeypatch
     # which doesn't work as snakemake is a subprocess
     is_test = snakemake.config["run"].get("is_test", False)
-    if not is_test:
-        # Extract export_duals flag from config in main
-        export_duals_flag = snakemake.params.solving["options"].get("export_duals", False)
-        
+    if not is_test:        
         n = solve_network(
             n,
             config=snakemake.config,
@@ -747,6 +808,7 @@ if __name__ == "__main__":
         )
         
         # Store dual variables in network components for netcdf export
+        export_duals_flag = snakemake.params.solving["options"].get("export_duals", False)
         if export_duals_flag:
             store_duals_to_network(n)
     else:
