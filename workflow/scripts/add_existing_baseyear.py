@@ -24,40 +24,6 @@ idx = pd.IndexSlice
 spatial = SimpleNamespace()
 
 
-def add_build_year_to_new_assets(n: pypsa.Network, baseyear: int):
-    """add a build year to new assets
-
-    Args:
-        n (pypsa.Network): the network
-        baseyear (int): year in which optimized assets are built
-    """
-
-    # Give assets with lifetimes and no build year the build year baseyear
-    for c in n.iterate_components(["Link", "Generator", "Store"]):
-        attr = "e" if c.name == "Store" else "p"
-
-        assets = c.df.index[(c.df.lifetime != np.inf) & (c.df[attr + "_nom_extendable"] is True)]
-
-        # add -baseyear to name
-        renamed = pd.Series(c.df.index, c.df.index)
-        renamed[assets] += "-" + str(baseyear)
-        c.df.rename(index=renamed, inplace=True)
-
-        assets = c.df.index[
-            (c.df.lifetime != np.inf)
-            & (c.df[attr + "_nom_extendable"] is True)
-            & (c.df.build_year == 0)
-        ]
-        c.df.loc[assets, "build_year"] = baseyear
-
-        # rename time-dependent
-        selection = n.component_attrs[c.name].type.str.contains("series") & n.component_attrs[
-            c.name
-        ].status.str.contains("Input")
-        for attr in n.component_attrs[c.name].index[selection]:
-            c.pnl[attr].rename(columns=renamed, inplace=True)
-
-
 def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series) -> pd.DataFrame:
     """distribute vre capacities by grade potential, use up better grades first
 
@@ -800,23 +766,20 @@ if __name__ == "__main__":
 
     configure_logging(snakemake, logger=logger)
 
-    vre_techs = ["solar", "onwind", "offwind"]
-
+        
     config = snakemake.config
+    # TODO then collapse everything but coal
+    if config["existing_capacities"].get("collapse_years", False) and config["Techs"].get("coal_ccs_retrofit", False):
+        raise ValueError("Incompatible configuration: collapse_years and coal_ccs_retrofit cannot be both enabled."
+                         " Retrofit requires the date information.")
+
     tech_costs = snakemake.input.tech_costs
     cost_year = int(snakemake.wildcards["planning_horizons"])
     data_paths = {k: v for k, v in snakemake.input.items()}
-
-    if config["run"].get("is_remind_coupled", False):
-        baseyear = int(snakemake.wildcards["planning_horizons"])
-    else:
-        baseyear = snakemake.params["baseyear"]
+    vre_techs = snakemake.params["vre_carriers"]
 
     n = pypsa.Network(snakemake.input.network)
     n_years = n.snapshot_weightings.generators.sum() / YEAR_HRS
-    if snakemake.params["add_baseyear_to_assets"]:
-        # call before adding new assets
-        add_build_year_to_new_assets(n, baseyear)
 
     costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
 
@@ -846,7 +809,7 @@ if __name__ == "__main__":
         add_paid_off_capacity(n, paid_off_caps, costs)
 
     if config["Techs"].get("coal_ccs_retrofit", False):
-        add_coal_retrofit(network, costs, cost_year)
+        add_coal_retrofit(n, costs, cost_year)
 
     compression = snakemake.config.get("io", None)
     if compression:

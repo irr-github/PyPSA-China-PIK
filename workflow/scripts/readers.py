@@ -4,6 +4,35 @@ import os
 import pandas as pd
 
 
+def read_edges(edge_path: os.PathLike, nodes: pd.Index | list) -> pd.DataFrame:  
+    """read edges csv data and validate vs nodes
+    Args:
+        edge_path (os.PathLike): path to the edges csv
+        nodes (pd.Index | list): The nodes to validate against.
+    Returns:
+        pd.DataFrame: The edges dataframe.
+    Raises:
+        ValueError: if edge path not specified (None)
+        ValueError: edge file vertices are not contained in nodes )skip withnone
+    """
+    if edge_path is None:
+        raise ValueError(f"No grid found for topology path {edge_path}")
+    else:
+        edges = pd.read_csv(
+            edge_path, sep=",", header=None, names=["bus0", "bus1", "p_nom"]
+        ).fillna(0)
+
+    # skip qa
+    if nodes is None:
+        return edges
+
+    edges_uniq = set(edges["bus0"]).union(set(edges["bus1"]))
+    if not edges_uniq.issubset(nodes):
+        raise ValueError(f"Edges contain unknown nodes: {edges_uniq - set(nodes)}")
+
+    return edges
+
+
 def read_yearly_load_projections(
     yearly_projections_p: os.PathLike = "resources/data/load/Province_Load_2020_2060.csv",
     conversion=1,

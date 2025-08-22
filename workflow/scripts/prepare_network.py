@@ -32,6 +32,7 @@ from build_biomass_potential import estimate_co2_intensity_xing
 from functions import haversine
 from add_electricity import load_costs, sanitize_carriers
 from readers_geospatial import read_province_shapes
+from readers import read_edges
 
 from constants import (
     PROV_NAMES,
@@ -365,7 +366,7 @@ def add_conventional_generators(
             )
 
 
-def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.DataFrame):
+def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.DataFrame, edges: pd.DataFrame):
     """add H2 generators, storage and links to the network - currently all or nothing
 
     Args:
@@ -373,6 +374,7 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
         config (dict): the config (snakemake config)
         nodes (pd.Index): the buses
         costs (pd.DataFrame): the cost database
+        edges (pd.DataFrame): the edge data
     """
     # TODO, does it make sense?
     if config.get("heat_coupling", False):
@@ -480,18 +482,8 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
             lifetime=costs.at["methanation", "lifetime"],
         )
 
+    # TODO shift read out of add_H2/el
     if config["Techs"]["hydrogen_lines"]:
-        edge_path = config["edge_paths"].get(config["scenario"]["topology"], None)
-        if edge_path is None:
-            raise ValueError(f"No grid found for topology {config['scenario']['topology']}")
-        else:
-            edges_ = pd.read_csv(
-                edge_path, sep=",", header=None, names=["bus0", "bus1", "p_nom"]
-            ).fillna(0)
-            edges = edges_[edges_["bus0"].isin(nodes) & edges_["bus1"].isin(nodes)]
-            if edges_.shape[0] != edges.shape[0]:
-                logger.warning("Some edges are not in the network buses")
-
         # fix this to use map with x.y
         lengths = config["lines"]["line_length_factor"] * np.array(
             [
@@ -556,12 +548,13 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
 
 
 # TODO harmonize with remind
-def add_voltage_links(network: pypsa.Network, config: dict):
+def add_voltage_links(network: pypsa.Network, config: dict, edges: pd.DataFrame):
     """add HVDC/AC links (no KVL)
 
     Args:
         network (pypsa.Network): the network object
         config (dict): the snakemake config
+        edges (pd.DataFrame): the edges dataframe
 
     Raises:
         ValueError: Invalid Edge path in config options
@@ -571,16 +564,9 @@ def add_voltage_links(network: pypsa.Network, config: dict):
     n_years = represented_hours / 8760.0
 
     # determine topology
-    edge_path = config["edge_paths"].get(config["scenario"]["topology"], None)
-    if edge_path is None:
+    if edges is None:
         raise ValueError(f"No grid found for topology {config['scenario']['topology']}")
-    else:
-        edges_ = pd.read_csv(
-            edge_path, sep=",", header=None, names=["bus0", "bus1", "p_nom"]
-        ).fillna(0)
-        edges = edges_[edges_["bus0"].isin(PROV_NAMES) & edges_["bus1"].isin(PROV_NAMES)]
-        if edges_.shape[0] != edges.shape[0]:
-            logger.warning("Some edges are not in the network")
+
     # fix this to use map with x.y
     lengths = config["lines"]["line_length_factor"] * np.array(
         [
@@ -739,6 +725,7 @@ def add_wind_and_solar(
         )
 
 
+# TODO move read out of function
 def add_heat_coupling(
     network: pypsa.Network,
     config: dict,
@@ -1328,11 +1315,14 @@ def generate_periodic_profiles(
     return week_df
 
 
+# TODO remove read data from function
+# TODO remove snakemake.x globals from function
 def prepare_network(
     config: dict,
     costs: pd.DataFrame,
     snapshots: pd.date_range,
     biomass_potential: pd.DataFrame = None,
+    edges: pd.DataFrame = None,
     paths: dict = None,
 ) -> pypsa.Network:
     """Prepares/makes the network object for overnight mode according to config &
@@ -1343,6 +1333,7 @@ def prepare_network(
         costs (pd.DataFrame): the costs dataframe (anualised capex and marginal costs)
         snapshots (pd.date_range): the snapshots for the network
         biomass_potential (Optional, pd.DataFrame): biomass potential dataframe. Defaults to None.
+        edges (Optional, pd.DataFrame): edge data. Defaults to None
         paths (Optional, dict): the paths to the data files. Defaults to None.
 
     Returns:
@@ -1427,14 +1418,14 @@ def prepare_network(
 
         network.add(
             "StorageUnit",
-            phss,
+            nodes,
             suffix=" PHS",
             bus=phss,
             carrier="PHS",
             p_nom_extendable=True,
             # p_nom_max=hydrocapa_df.loc[phss]["MW"],
-            p_nom=hydrocapa_df.loc[phss]["MW"],
-            p_nom_min=hydrocapa_df.loc[phss]["MW"],
+            # p_nom=hydrocapa_df.loc[phss]["MW"],
+            # p_nom_min=hydrocapa_df.loc[phss]["MW"],
             max_hours=config["hydro"]["PHS_max_hours"],
             efficiency_store=np.sqrt(costs.at["PHS", "efficiency"]),
             efficiency_dispatch=np.sqrt(costs.at["PHS", "efficiency"]),
@@ -1480,7 +1471,7 @@ def prepare_network(
 
     if config["add_H2"]:
         logger.info("Adding H2 to network")
-        add_H2(network, config, nodes, costs)
+        add_H2(network, config, nodes, costs, edges)
 
     if "battery" in config["Techs"]["store_techs"]:
 
@@ -1494,7 +1485,7 @@ def prepare_network(
             location=nodes,
         )
 
-        # TODO Why no standing loss?: test with
+        # TODO standing loss?
         min_charge = config["electricity"].get("min_charge", {"battery": 0})
         min_charge = min_charge.get("battery", 0)
         network.add(
@@ -1543,7 +1534,7 @@ def prepare_network(
     # TODO make not lossless optional (? - increases computing cost)
 
     if not config["no_lines"]:
-        add_voltage_links(network, config)
+        add_voltage_links(network, config, edges)
 
     assign_locations(network)
     return network
@@ -1603,8 +1594,11 @@ if __name__ == "__main__":
     else:
         biomass_potential = None
 
+    # get edges data and capacities
+    edges = read_edges(snakemake.input.edge_path, PROV_NAMES)
+
     network = prepare_network(
-        snakemake.config, costs, snapshots, biomass_potential, paths=input_paths
+        snakemake.config, costs, snapshots, biomass_potential, paths=input_paths, edges=edges
     )
 
     sanitize_carriers(network, snakemake.config)
