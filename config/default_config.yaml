@@ -178,7 +178,7 @@ Techs:
   store_techs: ["H2","battery","water tanks","PHS"]
   non_dispatchable: ["onwind", "offwind", "solar", "solar thermal"]
   hydrogen_lines: true
-  coal_ccs_retrofit: true # currently myopic pathway only.  CC = co2 cap 
+  coal_ccs_retrofit: false # currently myopic pathway only. for CHP & el power
 
 ## add components (overwrites vre tech choice)
 heat_coupling: false
