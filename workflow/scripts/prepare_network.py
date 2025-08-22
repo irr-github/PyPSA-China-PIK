@@ -13,7 +13,6 @@ These functions are currently only for the overnight mode. Myopic pathway mode c
 # TODO WHY DO WE USE VRESUTILS ANNUITY IN ONE PLACE AND OUR OWN CALC ELSEWHERE?
 
 import pypsa
-from vresutils.costdata import annuity
 from shapely.geometry import Point
 import geopandas as gpd
 import pandas as pd
@@ -54,7 +53,7 @@ def add_biomass_chp(
     costs: pd.DataFrame,
     nodes: pd.Index,
     biomass_potential: pd.DataFrame,
-    prov_centroids: gpd.GeoDataFrame,
+    prov_centroids: gpd.GeoDataFrame | gpd.GeoSeries,
     add_beccs: bool = True,
 ):
     """add biomass to the network. Biomass is here a new build (and not a retrofit)
@@ -183,12 +182,16 @@ def add_carriers(network: pypsa.Network, config: dict, costs: pd.DataFrame):
         network.add("Carrier", "coal", co2_emissions=costs.at["coal", "co2_emissions"])
     if "CCGT-CCS" in config["Techs"]["conv_techs"]:
         network.add("Carrier", "gas ccs", co2_emissions=costs.at["gas ccs", "co2_emissions"])
-    if "coal-CCS" in config["Techs"]["conv_techs"]:
+    ccs_retro = (
+        config["Techs"].get("coal_ccs_retrofit", False)
+        and config["existing_capacities"]["add"]
+    )
+    if "coal-CCS" in config["Techs"]["conv_techs"] or ccs_retro:
         network.add("Carrier", "coal ccs", co2_emissions=costs.at["coal ccs", "co2_emissions"])
 
 
 def add_co2_capture_support(
-    network: pypsa.Network, nodes: pd.Index, prov_centroids: gpd.GeoDataFrame
+    network: pypsa.Network, nodes: pd.Index, prov_centroids: gpd.GeoDataFrame | gpd.GeoSeries
 ):
     """add the necessary CO2 capture carriers & stores to the network
     Args:
@@ -233,7 +236,7 @@ def add_conventional_generators(
     network: pypsa.Network,
     nodes: pd.Index,
     config: dict,
-    prov_centroids: gpd.GeoDataFrame,
+    prov_centroids: gpd.GeoDataFrame | gpd.GeoSeries,
     costs: pd.DataFrame,
 ):
     """add conventional generators to the network
@@ -457,26 +460,24 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
         lifetime=costs.at["hydrogen storage tank type 1 including compressor", "lifetime"],
     )
     if config["add_methanation"]:
-        cost_year = snakemake.wildcards["planning_horizons"]
+        # TODO check this implementation rewards with CO2 price
         network.add(
             "Link",
             nodes + " Sabatier",
             bus0=nodes + " H2",
             bus1=nodes + " gas",
+            bus2=nodes + " CO2",
             carrier="Sabatier",
             p_nom_extendable=True,
             efficiency=costs.at["methanation", "efficiency"],
+            efficiency2=-costs.at["methanation", "efficiency"]
+                * costs.at["gas", "CO2 intensity"],
             capital_cost=costs.at["methanation", "efficiency"]
-            * costs.at["methanation", "capital_cost"]
-            + costs.at["direct air capture", "capital_cost"]
-            * costs.at["gas", "co2_emissions"]
-            * costs.at["methanation", "efficiency"],
-            # TODO fix me
+                * costs.at["methanation", "capital_cost"]
+                + costs.at["direct air capture", "capital_cost"]
+                * costs.at["gas", "co2_emissions"]
+                * costs.at["methanation", "efficiency"],
             lifetime=costs.at["methanation", "lifetime"],
-            # TODO fix this hardcoded @beijingzyl @irr-github
-            marginal_cost=(400 - 5 * (int(cost_year) - 2020))
-            * costs.at["gas", "co2_emissions"]
-            * costs.at["methanation", "efficiency"],
         )
 
     if config["Techs"]["hydrogen_lines"]:
@@ -710,15 +711,17 @@ def add_wind_and_solar(
         ds = ds.where(ds["p_nom_max"] > cutoff, drop=True)
 
         # bins represent renewable generation grades
-        flatten = lambda t: " grade".join(map(str, t))
+        def _flatten(t) -> str:
+            return " grade".join(map(str, t))
+
         buses = ds.indexes["bus_bin"].get_level_values("bus")
-        bus_bins = ds.indexes["bus_bin"].map(flatten)
+        bus_bins = ds.indexes["bus_bin"].map(_flatten)
 
         p_nom_max = ds["p_nom_max"].to_pandas()
-        p_nom_max.index = p_nom_max.index.map(flatten)
+        p_nom_max.index = p_nom_max.index.map(_flatten)
 
         p_max_pu = ds["profile"].to_pandas()
-        p_max_pu.columns = p_max_pu.columns.map(flatten)
+        p_max_pu.columns = p_max_pu.columns.map(_flatten)
 
         # add renewables
         network.add(
@@ -740,7 +743,7 @@ def add_heat_coupling(
     network: pypsa.Network,
     config: dict,
     nodes: pd.Index,
-    prov_centroids: gpd.GeoDataFrame,
+    prov_centroids: gpd.GeoDataFrame | gpd.GeoSeries,
     costs: pd.DataFrame,
     planning_year: int,
     paths: dict,
@@ -1092,7 +1095,7 @@ def add_hydro(
     network: pypsa.Network,
     config: dict,
     nodes: pd.Index,
-    prov_shapes: gpd.GeoDataFrame,
+    prov_shapes: gpd.GeoDataFrame | gpd.GeoSeries,
     costs: pd.DataFrame,
     planning_horizons: int,
 ):
@@ -1457,13 +1460,15 @@ def prepare_network(
             location=nodes,
         )
 
+    if (config["add_biomass"] and config.get("heat_coupling", False)) or config["add_methanation"]:
+        add_co2_capture_support(network, nodes, prov_centroids)
+
     if config.get("heat_coupling", False):
         logger.info("Adding heat and CHP to the network")
         add_heat_coupling(network, config, nodes, prov_centroids, costs, planning_horizons, paths)
 
         if config["add_biomass"]:
             logger.info("Adding biomass to network")
-            add_co2_capture_support(network, nodes, prov_centroids)
             add_biomass_chp(
                 network,
                 costs,
@@ -1544,103 +1549,6 @@ def prepare_network(
     return network
 
 
-# TODO add coal CCS retrofit option
-def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
-    """
-    Optional retrofit of brownfield coal power / CHP with CCS (Carbon Capture and Storage) technology. 
-    Requires additional constraint in solve_network.extra_functionality
-    Args:
-        n (pypsa.Network): The PyPSA network object to modify.
-        costs (pd.DataFrame): techno-economic data.
-        plan_year (int): The year in which the retrofit is planned, used to set build year and calculate remaining lifetime
-    """
-    config = n.config
-
-    ramps = config.get(
-        "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
-    )
-    ramps = ramps.get("coal", {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan})
-    p_max_pu = ramps.get("p_max_pu", 0.9)
-    # adjust ramp to snapshots since ramp is per timestep
-    ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
-    
-    coal_brownfield = n.generators.query("carrier == 'coal' & p_nom_extendable == False")
-    n.add(
-        "Generator",
-        name=coal_brownfield.index+ "-ccs retrofit",
-        bus=coal_brownfield.bus.values,
-        carrier="coal ccs",
-        p_nom_extendable=True,
-        p_nom_max=coal_brownfield.p_nom.values,
-        p_max_pu=p_max_pu,
-        ramp_limit_up=ramps["ramp_limit_up"],
-        ramp_limit_down=ramps["ramp_limit_down"],
-        build_year=plan_year,
-        lifetime=plan_year - coal_brownfield.build_year.values,
-        capital_cost=costs.at["retrofit", "capital_cost"],
-        marginal_cost=costs.at["coal ccs", "marginal_cost"],
-        efficiency=costs.at["coal ccs", "efficiency"],
-    )
-
-    coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom_extendable == False")
-    chp_nodes = coal_CHP_brownfield.bus1
-    ccs_fuel_bus = chp_nodes + "coal fuel ccs"
-    n.add(
-        "Bus",
-        ccs_fuel_bus,
-        x=chp_nodes.map(n.buses.x),
-        y=chp_nodes.map(n.buses.y),
-        carrier="coal ccs",
-        location=chp_nodes.map(n.buses.location),
-    )
-
-    n.add(
-        "Generator",
-        ccs_fuel_bus,
-        bus=ccs_fuel_bus,
-        carrier="coal ccs",
-        p_nom_extendable=False,
-        p_nom=1e8,
-        marginal_cost=costs.at["coal", "fuel"],
-    )
-
-    n.add(
-        "Link",
-        name=coal_CHP_brownfield.index + "-ccs retrofit",
-        bus0=ccs_fuel_bus,
-        bus1=chp_nodes,
-        p_nom_extendable=True,
-        p_nom_max=coal_CHP_brownfield.p_nom.values,
-        build_year=plan_year,
-        lifetime=plan_year - coal_CHP_brownfield.build_year.values,
-        marginal_cost=costs.at["central coal CHP", "efficiency"]
-        * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-        # TODO check
-        capital_cost=costs.at["retrofit", "capital_cost"],
-        * costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
-        efficiency=costs.at["central coal CHP", "efficiency"],
-        # TODO CHECK this gives realistic power to heat ratios for china
-        c_b=costs.at["central coal CHP", "c_b"],
-        p_nom_ratio=1.0,
-        carrier="CHP coal CCS",
-    )
-
-    boiler_brownfield = n.links.query("carrier == 'coal boiler central' and p_nom_extendable == False")
-    network.add(
-        "Link",
-        boiler_brownfield.index + "-ccs retrofit",
-        bus0=ccs_fuel_bus,
-        bus1=chp_nodes + " central heat",
-        carrier="CHP coal CCS",
-        p_nom_extendable=True,
-        marginal_cost=costs.at["central coal CHP", "efficiency"]
-        * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-        efficiency=costs.at["central coal CHP", "efficiency"]
-        / costs.at["central coal CHP", "c_v"],
-        lifetime=costs.at["central coal CHP", "lifetime"],
-        )
-
-
 if __name__ == "__main__":
 
     # Detect running outside of snakemake and mock snakemake for testing
@@ -1698,8 +1606,7 @@ if __name__ == "__main__":
     network = prepare_network(
         snakemake.config, costs, snapshots, biomass_potential, paths=input_paths
     )
-    if config["Techs"].get("coal_ccs_retrofit", False):
-        add_coal_retrofit(network, costs, cost_year)
+
     sanitize_carriers(network, snakemake.config)
 
     outp = snakemake.output.network_name
