@@ -23,21 +23,21 @@ idx = pd.IndexSlice
 spatial = SimpleNamespace()
 
 # TODO further centralise
-CARRIER_MAP= {
-        "coal": "coal power plant",
-        "CHP coal": "central coal CHP",
-        "CHP gas": "central gas CHP",
-        "OCGT": "gas OCGT",
-        "CCGT": "gas CCGT",
-        "solar": "solar",
-        "solar thermal": "central solar thermal",
-        "onwind": "onwind",
-        "offwind": "offwind",
-        "coal boiler": "central coal boiler",
-        "ground heat pump": "central ground-sourced heat pump",
-        "nuclear": "nuclear",
-        "PHS": "PHS"
-    }
+CARRIER_MAP = {
+    "coal": "coal power plant",
+    "CHP coal": "central coal CHP",
+    "CHP gas": "central gas CHP",
+    "OCGT": "gas OCGT",
+    "CCGT": "gas CCGT",
+    "solar": "solar",
+    "solar thermal": "central solar thermal",
+    "onwind": "onwind",
+    "offwind": "offwind",
+    "coal boiler": "central coal boiler",
+    "ground heat pump": "central ground-sourced heat pump",
+    "nuclear": "nuclear",
+    "PHS": "PHS",
+}
 
 
 def determine_simulation_timespan(config: dict, year: int) -> int:

@@ -1,4 +1,4 @@
-""" Add solution to brownfield capacity file"""
+"""Add solution to brownfield capacity file"""
 
 import logging
 import pypsa
@@ -17,12 +17,14 @@ CARRIER_MAP.update(EXTRA_CARRIERS)
 def _previous_horizon(yr) -> int:
     """find previous year"""
     years = [int(y) for y in config["scenario"]["planning_horizons"]]
-    prev_idx = max(0, years.index(yr)-1)
+    prev_idx = max(0, years.index(yr) - 1)
     return years[prev_idx]
 
 
 # TODO remove coal retrofit from coal
-def calculate_solved_capacities(previous_network: pypsa.Network, year: int, threshold: int = None) -> pd.DataFrame:
+def calculate_solved_capacities(
+    previous_network: pypsa.Network, year: int, threshold: int = None
+) -> pd.DataFrame:
     """
     Calculate the capacities installed in a previous solution.
 
@@ -41,35 +43,37 @@ def calculate_solved_capacities(previous_network: pypsa.Network, year: int, thre
     for c in components:
         # print(c)
         prefix = "e" if c == "Store" else "p"
-        comp = getattr(previous_network, c.lower()+"s").query(f"{prefix}_nom_extendable==True")
+        comp = getattr(previous_network, c.lower() + "s").query(f"{prefix}_nom_extendable==True")
         comp = comp[comp.carrier.isin(allowed_carriers)]
         installed = comp.groupby(["carrier", "location"])[f"{prefix}_nom_opt"].sum()
         lifetime = comp.groupby(["carrier", "location"])["lifetime"].mean()
-        comp_data = pd.concat([lifetime, installed], axis = 1).reset_index()
+        comp_data = pd.concat([lifetime, installed], axis=1).reset_index()
         comp_data["Tech"] = comp_data["carrier"].map(CARRIER_MAP)
         comp_data["Fuel"] = comp_data["carrier"]
         comp_data.index = comp_data.location + "-" + comp_data.Fuel + f"-{year}"
 
         # reformat as existing infrastructure table
-        df = pd.DataFrame({
-            "DateIn": [int(year)] * len(comp_data),
-            "DateOut": year + comp_data.lifetime.astype(int),
-            "Tech": comp_data.carrier.map(CARRIER_MAP),
-            "Fueltype": comp_data.carrier,
-            "Capacity": comp_data[f"{prefix}_nom_opt"],
-            "bus": comp_data.location,
-        }, index=comp_data.index
+        df = pd.DataFrame(
+            {
+                "DateIn": [int(year)] * len(comp_data),
+                "DateOut": year + comp_data.lifetime.astype(int),
+                "Tech": comp_data.carrier.map(CARRIER_MAP),
+                "Fueltype": comp_data.carrier,
+                "Capacity": comp_data[f"{prefix}_nom_opt"],
+                "bus": comp_data.location,
+            },
+            index=comp_data.index,
         )
 
         if threshold:
-            df = df[df.Capacity>threshold]
+            df = df[df.Capacity > threshold]
         solved_capacities = pd.concat([solved_capacities, df])
 
     return solved_capacities
 
 
 def get_solved_edges(previous_network: pypsa.Network) -> dict[str, pd.DataFrame]:
-    """ Get the previously solved edges
+    """Get the previously solved edges
     Args:
         previous_network (pypsa.Network): The solved PyPSA network from the previous horizon.
         year (int): The planning year.
@@ -81,21 +85,24 @@ def get_solved_edges(previous_network: pypsa.Network) -> dict[str, pd.DataFrame]
         "bus1.map(@n_p.buses.carrier) & "
         "carrier == 'AC' & "
         "not index.str.contains('reverse')"
-    )[["bus0", "bus1", "p_nom_opt"]]
+    )[["bus0", "bus1", "p_nom_opt", "p_nom"]]
 
-    return connects
+    connects["p_nom_opt"] = connects.apply(lambda row: max(row.p_nom_opt, row.p_nom), axis=1)
+
+    return connects[["bus0", "bus1", "p_nom_opt"]]
+
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "update_brownfield_with_solved",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
             planning_horizons="2025",
             topology="current+FCG",
-            # heating_demand="positive",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            heating_demand="positive",
+            configfiles="config/myopic.yml",
         )
-    
+
     configure_logging(snakemake)
     config = snakemake.config
 
@@ -104,8 +111,12 @@ if __name__ == "__main__":
 
     previous_network = pypsa.Network(snakemake.input.solved_network)
     brownfield_capacities = pd.read_csv(snakemake.input.installed_capacities)
-    
-    installed_last_step = calculate_solved_capacities(previous_network, prev_plan_yr, threshold= config["existing_capacities"].get("threshold", None))
+
+    installed_last_step = calculate_solved_capacities(
+        previous_network,
+        prev_plan_yr,
+        threshold=config["existing_capacities"].get("threshold", None),
+    )
 
     installed_all = pd.concat([brownfield_capacities, installed_last_step])
     # TODO Group by name

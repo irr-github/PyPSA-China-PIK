@@ -294,8 +294,8 @@ def add_power_capacities_installed_before_baseyear(
             # ugly fix to register the carrier. Emissions for sub carrier are 0: they are accounted for at gas bus
             n.carriers.loc[carrier_] = {
                 "co2_emissions": 0,
-                "color": snakemake.config["plotting"]["tech_colors"][carrier_],
-                "nice_name": snakemake.config["plotting"]["nice_names"][carrier_],
+                "color": config["plotting"]["tech_colors"][carrier_],
+                "nice_name": config["plotting"]["nice_names"][carrier_],
                 "max_growth": np.inf,
                 "max_relative_growth": 0,
             }
@@ -655,7 +655,7 @@ def filter_capacities(existing_df: pd.DataFrame, plan_year: int) -> pd.DataFrame
 # TODO add coal CCS retrofit option
 def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
     """
-    Optional retrofit of brownfield coal power / CHP with CCS (Carbon Capture and Storage) technology. 
+    Optional retrofit of brownfield coal power / CHP with CCS (Carbon Capture and Storage) technology.
     Requires additional constraint in solve_network.extra_functionality
     Args:
         n (pypsa.Network): The PyPSA network object to modify.
@@ -665,8 +665,10 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
     config = n.config
 
     if config["existing_capacities"].get("collapse_years", False):
-        raise ValueError("Collapse pf brownfield years are not currently supported for coal CCS retrofitting.")
-    
+        raise ValueError(
+            "Collapse pf brownfield years are not currently supported for coal CCS retrofitting."
+        )
+
     ramps = config.get(
         "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
     )
@@ -674,11 +676,11 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
     p_max_pu = ramps.get("p_max_pu", 0.9)
     # adjust ramp to snapshots since ramp is per timestep
     ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
-    
+
     coal_brownfield = n.generators.query("carrier == 'coal' & p_nom_extendable == False")
     n.add(
         "Generator",
-        name=coal_brownfield.index+ "-ccs retrofit",
+        name=coal_brownfield.index + "-ccs retrofit",
         bus=coal_brownfield.bus.values,
         carrier="coal ccs",
         p_nom_extendable=True,
@@ -728,7 +730,7 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
         # TODO check
         capital_cost=costs.at["retrofit", "capital_cost"],
-        * costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
+        *costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
         efficiency=costs.at["central coal CHP", "efficiency"],
         # TODO CHECK this gives realistic power to heat ratios for china
         c_b=costs.at["central coal CHP", "c_b"],
@@ -736,7 +738,9 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         carrier="CHP coal CCS",
     )
 
-    boiler_brownfield = n.links.query("carrier == 'coal boiler central' and p_nom_extendable == False")
+    boiler_brownfield = n.links.query(
+        "carrier == 'coal boiler central' and p_nom_extendable == False"
+    )
     n.add(
         "Link",
         boiler_brownfield.index + "-ccs retrofit",
@@ -746,10 +750,9 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         p_nom_extendable=True,
         marginal_cost=costs.at["central coal CHP", "efficiency"]
         * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-        efficiency=costs.at["central coal CHP", "efficiency"]
-        / costs.at["central coal CHP", "c_v"],
+        efficiency=costs.at["central coal CHP", "efficiency"] / costs.at["central coal CHP", "c_v"],
         lifetime=costs.at["central coal CHP", "lifetime"],
-        )
+    )
 
 
 if __name__ == "__main__":
@@ -766,12 +769,15 @@ if __name__ == "__main__":
 
     configure_logging(snakemake, logger=logger)
 
-        
     config = snakemake.config
     # TODO then collapse everything but coal
-    if config["existing_capacities"].get("collapse_years", False) and config["Techs"].get("coal_ccs_retrofit", False):
-        raise ValueError("Incompatible configuration: collapse_years and coal_ccs_retrofit cannot be both enabled."
-                         " Retrofit requires the date information.")
+    if config["existing_capacities"].get("collapse_years", False) and config["Techs"].get(
+        "coal_ccs_retrofit", False
+    ):
+        raise ValueError(
+            "Incompatible configuration: collapse_years and coal_ccs_retrofit cannot be both enabled."
+            " Retrofit requires the date information."
+        )
 
     tech_costs = snakemake.input.tech_costs
     cost_year = int(snakemake.wildcards["planning_horizons"])

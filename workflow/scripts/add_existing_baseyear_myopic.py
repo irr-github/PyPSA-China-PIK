@@ -1,4 +1,5 @@
-""" Add solution to all brownfield capacity files"""
+"""Add solution to all brownfield capacity files"""
+
 # TODO ADD CCS TO EXISTING BASE YEAR TECHS
 
 import logging
@@ -11,9 +12,8 @@ from add_electricity import load_costs
 from add_existing_baseyear import (
     add_coal_retrofit,
     add_existing_vre_capacities,
-    add_paid_off_capacity,
     add_power_capacities_installed_before_baseyear,
-    filter_capacities
+    filter_capacities,
 )
 from readers import read_edges
 
@@ -54,30 +54,44 @@ def add_build_year_to_new_assets(n: pypsa.Network, baseyear: int):
         for attr in n.component_attrs[c.name].index[selection]:
             c.pnl[attr].rename(columns=renamed, inplace=True)
 
-def update_edges(n: pypsa.Network, solved_edges: pd.DataFrame):
 
-    connects :pd.DataFrame = n.links.query(
-        "bus0.map(@n_p.buses.carrier) == "
-        "bus1.map(@n_p.buses.carrier) & "
+def update_edges(n: pypsa.Network, prev_edges: pd.DataFrame, lossy_edges: bool):
+    """Update the p_nom of the HV network edges based on the previous brownfield state
+    Args:
+        n (pypsa.Network): the pypsa network to update with a previous state
+        prev_edges (pd.DataFrame): bronwfield edges (myopic output or brownfield input)
+        lossy_edges (bool): whether edges are lossy (config["line_losses"] adds 'positive' suffix)
+    """
+
+    connects_mask = n.links.query(
+        "bus0.map(@n.buses.carrier) == "
+        "bus1.map(@n.buses.carrier) & "
         "carrier == 'AC' & "
         "not index.str.contains('reverse')"
-    )[["bus0", "bus1", "p_nom_opt"]]
+    ).index
 
-    edges = solved_edges.reset_index()
-    edges.index = edges["bus0"] + "-" + edges["bus1"]
+    edges = prev_edges.copy()
+    suffix = " positive" if lossy_edges else ""
+    edges.index = edges["bus0"] + "-" + edges["bus1"] + suffix
 
-    # TODO fix
+    # Check if indices align between connects and edges
+    if not edges.index.isin(connects_mask).all():
+        raise ValueError(
+            "Indices between connects and edges do not align. Please check input data."
+        )
+
+    n.links.loc[connects_mask, ["bus0", "bus1", "p_nom"]] = edges
+
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "add_existing_baseyear_myopic",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            planning_horizons="2040",
-            configfiles="resources/tmp/pseudo_coupled.yml",
-            # heating_demand="positive",
+            co2_pathway="exp175default",
+            planning_horizons="2025",
+            configfiles="config/myopic.yml",
+            heating_demand="positive",
         )
 
     configure_logging(snakemake, logger=logger)
@@ -92,14 +106,15 @@ if __name__ == "__main__":
 
     n = pypsa.Network(snakemake.input.network)
     n_years = n.snapshot_weightings.generators.sum() / YEAR_HRS
-    if snakemake.params["add_baseyear_to_assets"]:
-        # call before adding new assets
-        add_build_year_to_new_assets(n, baseyear)
-
-    costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
 
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)
     existing_capacities = filter_capacities(existing_capacities, cost_year)
+    prev_edges = pd.read_csv(snakemake.input.edges, header=None, names=["bus0", "bus1", "p_nom"])
+    costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
+
+    if snakemake.params["add_baseyear_to_assets"]:
+        # call before adding new assets
+        add_build_year_to_new_assets(n, baseyear)
 
     vre_caps = existing_capacities.query("Tech in @vre_techs | Fueltype in @vre_techs")
     # vre_caps.loc[:, "Country"] = coco.CountryConverter().convert(["China"], to="iso2")
@@ -112,6 +127,7 @@ if __name__ == "__main__":
 
     # add to the network
     add_power_capacities_installed_before_baseyear(n, costs, config, installed)
+    update_edges(n, prev_edges, config["line_losses"])
 
     if config["Techs"].get("coal_ccs_retrofit", False):
         add_coal_retrofit(n, costs, cost_year)
