@@ -201,7 +201,7 @@ def prepare_network(
         pypsa.Network: network object with additional constraints
     """
     cfg_manager = ConfigManager(config)
-    cfg_manager.handle_scenarios()
+    # cfg_manager.handle_scenarios()
     co2_opts = cfg_manager.fetch_co2_restriction(co2_pathway, int(plan_year))
     add_co2_constraints_prices(n, co2_opts)
 
@@ -810,7 +810,10 @@ if __name__ == "__main__":
         # Store dual variables in network components for netcdf export
         export_duals_flag = snakemake.params.solving["options"].get("export_duals", False)
         if export_duals_flag:
-            store_duals_to_network(n)
+            try:
+                store_duals_to_network(n)
+            except Exception as e:
+                logger.error(f"Could not store dual variables to network: {e}")
     else:
         logging.info("Mocking the solve step")
         n = mock_solve(n)
