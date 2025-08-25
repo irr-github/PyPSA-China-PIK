@@ -312,7 +312,7 @@ if config["foresight"] in ["overnight"]:
     paidoff_caps = DERIVED_DATA + "/remind/harmonized_capacities/paid_off_capacities.csv"
     if not IS_REMIND_COUPLED:
         # dummy for snakemake
-        paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities_{planning_horizons}.csv'
+        paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
     rule add_existing_baseyear:
         params:
             add_baseyear_to_assets = False,
@@ -334,7 +334,7 @@ elif config["foresight"] == "myopic" and IS_REMIND_COUPLED:
 
 elif config["foresight"] == "myopic":
 
-    add_brownfield = True
+    add_brownfield = "-brownfield"
     rule prepare_networks:
         input:
             edge_path = config["edge_paths"].get(config["scenario"]["topology"], None),
@@ -358,6 +358,8 @@ elif config["foresight"] == "myopic":
     def find_last_solution(wildcards) -> os.PathLike:
         """find previous solution"""
         yr = int(wildcards.planning_horizons)
+        if yr == BASEYEAR:
+            return RESULTS_DIR+ f"/prenetworks/ntwk_{yr}.nc"
         years =  [int(y) for y in config["scenario"]["planning_horizons"]]
         prev_idx = max(0, years.index(yr)-1)
         return RESULTS_DIR+ f"/postnetworks/ntwk_{years[prev_idx]}.nc"
@@ -366,16 +368,16 @@ elif config["foresight"] == "myopic":
         """find myopic capacity"""
         yr = int(wildcards.planning_horizons)
 
-        if yr == BASEYEAR:
+        if yr == int(BASEYEAR):
             return DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
+
         else:
-            years =  [int(y) for y in config["scenario"]["planning_horizons"]]
+            years =  sorted([int(y) for y in config["scenario"]["planning_horizons"]])
             prev_idx = max(0, years.index(yr)-1)
-            return f'/prenetworks-brownfield/input_capacities_{years[prev_idx]}.csv'
+            return RESULTS_DIR+ f'/prenetworks-brownfield/input_capacities_{years[prev_idx]}.csv'
 
     rule update_brownfield_with_solved:
         """ update installed capacity iteratively with next solution"""
-
         input:
             network=find_last_solution,
             installed_capacities = get_myopic_capacity, # last solution capacity or data
@@ -391,7 +393,7 @@ elif config["foresight"] == "myopic":
             add_baseyear_to_assets = False,
         input:
             # solved_network=previous_horizon,
-            edges = '/prenetworks-brownfield/input_edges_{plannng_horizons}.csv'
+            edges = RESULTS_DIR +'/prenetworks-brownfield/input_edges_{planning_horizons}.csv',
             network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
             cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5",
@@ -429,6 +431,7 @@ rule dag:
         rules_dot="results/dag/rules_graph.dot",
         rules_pdf="results/dag/rules_graph.pdf",
         rules_png="results/dag/rules_graph.png",
+        rules_svg="results/dag/rules_graph.svg",
     conda:
         "envs/environment.yaml"
     shell:
@@ -436,9 +439,10 @@ rule dag:
         snakemake --dag --quiet | sed -n "/digraph/,\$p" > {output.dag_dot}
         dot -Tpdf -o {output.dag_pdf} {output.dag_dot}
         dot -Tpng -o {output.dag_png} {output.dag_dot}
-        snakemake --rulegraph plot_all --quiet | sed -n "/digraph/,\$p" > {output.rules_dot}
+        snakemake --rulegraph dot --quiet | sed -n "/digraph/,\$p" > {output.rules_dot}
         dot -Tpdf -o {output.rules_pdf} {output.rules_dot}
         dot -Tpng -o {output.rules_png} {output.rules_dot}
+        dot -Tsvg -o {output.rules_svg} {output.rules_dot}
         """
 
 onerror:

@@ -184,8 +184,7 @@ def add_carriers(network: pypsa.Network, config: dict, costs: pd.DataFrame):
     if "CCGT-CCS" in config["Techs"]["conv_techs"]:
         network.add("Carrier", "gas ccs", co2_emissions=costs.at["gas ccs", "co2_emissions"])
     ccs_retro = (
-        config["Techs"].get("coal_ccs_retrofit", False)
-        and config["existing_capacities"]["add"]
+        config["Techs"].get("coal_ccs_retrofit", False) and config["existing_capacities"]["add"]
     )
     if "coal-CCS" in config["Techs"]["conv_techs"] or ccs_retro:
         network.add("Carrier", "coal ccs", co2_emissions=costs.at["coal ccs", "co2_emissions"])
@@ -366,7 +365,9 @@ def add_conventional_generators(
             )
 
 
-def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.DataFrame, edges: pd.DataFrame):
+def add_H2(
+    network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.DataFrame, edges: pd.DataFrame
+):
     """add H2 generators, storage and links to the network - currently all or nothing
 
     Args:
@@ -472,13 +473,12 @@ def add_H2(network: pypsa.Network, config: dict, nodes: pd.Index, costs: pd.Data
             carrier="Sabatier",
             p_nom_extendable=True,
             efficiency=costs.at["methanation", "efficiency"],
-            efficiency2=-costs.at["methanation", "efficiency"]
-                * costs.at["gas", "CO2 intensity"],
+            efficiency2=-costs.at["methanation", "efficiency"] * costs.at["gas", "co2_emissions"],
             capital_cost=costs.at["methanation", "efficiency"]
-                * costs.at["methanation", "capital_cost"]
-                + costs.at["direct air capture", "capital_cost"]
-                * costs.at["gas", "co2_emissions"]
-                * costs.at["methanation", "efficiency"],
+            * costs.at["methanation", "capital_cost"]
+            + costs.at["direct air capture", "capital_cost"]
+            * costs.at["gas", "co2_emissions"]
+            * costs.at["methanation", "efficiency"],
             lifetime=costs.at["methanation", "lifetime"],
         )
 
@@ -982,15 +982,15 @@ def add_heat_coupling(
             marginal_cost=costs.at["coal", "fuel"],
         )
 
-        # TODO add district heat copper connect between Hebei and Beijing 
+        # TODO add district heat copper connect between Hebei and Beijing
         # TODO add pmaxpu from config and ramp
         # NOTE generator | boiler is a key word for the constraint
         network.add(
             "Link",
             name=nodes[nodes != "Beijing"],
             suffix=" CHP coal generator",
-            bus0=nodes + " coal fuel",
-            bus1=nodes,
+            bus0=nodes[nodes != "Beijing"] + " coal fuel",
+            bus1=nodes[nodes != "Beijing"],
             p_nom_extendable=True,
             marginal_cost=costs.at["central coal CHP", "efficiency"]
             * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
@@ -1006,10 +1006,10 @@ def add_heat_coupling(
 
         network.add(
             "Link",
-            nodes[nodes!="Beijing"],
+            nodes[nodes != "Beijing"],
             suffix=" central CHP coal boiler",
-            bus0=nodes + " coal fuel",
-            bus1=nodes + " central heat",
+            bus0=nodes[nodes != "Beijing"] + " coal fuel",
+            bus1=nodes[nodes != "Beijing"] + " central heat",
             carrier="CHP coal",
             p_nom_extendable=True,
             marginal_cost=costs.at["central coal CHP", "efficiency"]
@@ -1023,10 +1023,10 @@ def add_heat_coupling(
         for cat in ["decentral", "central"]:
             network.add(
                 "Link",
-                nodes + f" {cat} coal boiler",
+                nodes[nodes != "Beijing"] + f" {cat} coal boiler",
                 p_nom_extendable=True,
-                bus0=nodes + " coal fuel",
-                bus1=nodes + f" {cat} heat",
+                bus0=nodes[nodes != "Beijing"] + " coal fuel",
+                bus1=nodes[nodes != "Beijing"] + f" {cat} heat",
                 efficiency=costs.at[f"{cat} coal boiler", "efficiency"],
                 marginal_cost=costs.at[f"{cat} coal boiler", "efficiency"]
                 * costs.at[f"{cat} coal boiler", "VOM"],
@@ -1405,7 +1405,6 @@ def prepare_network(
             lifetime=costs.at["nuclear", "lifetime"],
         )
 
-
     if "PHS" in config["Techs"]["store_techs"]:
         # TODO soft-code path
         # pure pumped hydro storage, fixed, 6h energy by default, no inflow
@@ -1420,7 +1419,7 @@ def prepare_network(
             "StorageUnit",
             nodes,
             suffix=" PHS",
-            bus=phss,
+            bus=nodes,
             carrier="PHS",
             p_nom_extendable=True,
             # p_nom_max=hydrocapa_df.loc[phss]["MW"],
@@ -1547,11 +1546,12 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "prepare_networks",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-freeze",
+            co2_pathway="exp175default",
+            # co2_pathway="SSP2-PkBudg1000-freeze",
             planning_horizons=2030,
             heating_demand="positive",
-            configfiles="resources/tmp/remind_coupled.yaml",
+            # configfiles="resources/tmp/remind_coupled.yaml",
+            configfiles="config/myopic.yml",
         )
 
     configure_logging(snakemake)
