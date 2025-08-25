@@ -70,7 +70,7 @@ elif config["foresight"] in ["overnight", "myopic"]:
     rule plot_all:
         input:
             expand(
-                RESULTS_DIR+ '/plots/summary/pathway_costs.png',
+                RESULTS_DIR+ '/plots/_summary/pathway_costs.png',
                 **{k: v for k, v in config["scenario"].items() if k != "planning_horizons"},
             ),
             # network plot
@@ -379,7 +379,7 @@ elif config["foresight"] == "myopic":
     rule update_brownfield_with_solved:
         """ update installed capacity iteratively with next solution"""
         input:
-            network=find_last_solution,
+            solved_network=find_last_solution,
             installed_capacities = get_myopic_capacity, # last solution capacity or data
         output:
             myopic_capacities = RESULTS_DIR + '/prenetworks-brownfield/input_capacities_{planning_horizons}.csv',
