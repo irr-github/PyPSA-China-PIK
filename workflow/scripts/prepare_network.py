@@ -49,6 +49,76 @@ logger = logging.getLogger(__name__)
 # TODO add heat disipator?
 
 
+def add_batteries(
+    network: pypsa.Network,
+    config: dict,
+    nodes: pd.Index,
+    prov_centroids: gpd.GeoSeries,
+    costs: pd.DataFrame,
+):
+    """
+    Add batteries to network
+    Args:
+        network (pypsa.Network): The PyPSA network object to which batteries will be added.
+        nodes (pd.Index): The nodes (e.g., provinces or buses) where batteries are to be added.
+        prov_centroids (gpd.GeoSeries): 'x' and 'y' coordinates for each node.
+        costs (pd.DataFrame): DataFrame with cost and technical parameters for battery components.
+    """
+
+    network.add(
+        "Bus",
+        nodes,
+        suffix=" battery",
+        x=prov_centroids.x,
+        y=prov_centroids.y,
+        carrier="battery",
+        location=nodes,
+    )
+
+    # TODO standing loss?
+    min_charge = config["electricity"].get("min_charge", {"battery": 0})
+    min_charge = min_charge.get("battery", 0)
+    network.add(
+        "Store",
+        nodes + " battery",
+        bus=nodes + " battery",
+        e_cyclic=True,
+        e_nom_extendable=True,
+        e_min_pu=min_charge,
+        capital_cost=costs.at["battery storage", "capital_cost"],
+        lifetime=costs.at["battery storage", "lifetime"],
+    )
+
+    # TODO understand/remove sources, data should not be in code
+    # Sources:
+    # [HP]: Henning, Palzer http://www.sciencedirect.com/science/article/pii/S1364032113006710
+    # [B]: Budischak et al. http://www.sciencedirect.com/science/article/pii/S0378775312014759
+
+    network.add(
+        "Link",
+        nodes + " battery charger",
+        bus0=nodes,
+        bus1=nodes + " battery",
+        efficiency=costs.at["battery inverter", "efficiency"] ** 0.5,
+        capital_cost=costs.at["battery inverter", "efficiency"]
+        * costs.at["battery inverter", "capital_cost"],
+        p_nom_extendable=True,
+        carrier="battery",
+        lifetime=costs.at["battery inverter", "lifetime"],
+    )
+
+    network.add(
+        "Link",
+        nodes + " battery discharger",
+        bus0=nodes + " battery",
+        bus1=nodes,
+        efficiency=costs.at["battery inverter", "efficiency"] ** 0.5,
+        marginal_cost=0.0,
+        p_nom_extendable=True,
+        carrier="battery discharger",
+    )
+
+
 def add_biomass_chp(
     network: pypsa.Network,
     costs: pd.DataFrame,
@@ -1408,8 +1478,6 @@ def prepare_network(
     if "PHS" in config["Techs"]["store_techs"]:
         # TODO soft-code path
         # pure pumped hydro storage, fixed, 6h energy by default, no inflow
-        hydrocapa_df = pd.read_csv("resources/data/hydro/PHS_p_nom.csv", index_col=0)
-        phss = hydrocapa_df.index[hydrocapa_df["MW"] > 0].intersection(nodes)
         if config["hydro"]["hydro_capital_cost"]:
             cc = costs.at["PHS", "capital_cost"]
         else:
@@ -1473,59 +1541,7 @@ def prepare_network(
         add_H2(network, config, nodes, costs, edges)
 
     if "battery" in config["Techs"]["store_techs"]:
-
-        network.add(
-            "Bus",
-            nodes,
-            suffix=" battery",
-            x=prov_centroids.x,
-            y=prov_centroids.y,
-            carrier="battery",
-            location=nodes,
-        )
-
-        # TODO standing loss?
-        min_charge = config["electricity"].get("min_charge", {"battery": 0})
-        min_charge = min_charge.get("battery", 0)
-        network.add(
-            "Store",
-            nodes + " battery",
-            bus=nodes + " battery",
-            e_cyclic=True,
-            e_nom_extendable=True,
-            e_min_pu=min_charge,
-            capital_cost=costs.at["battery storage", "capital_cost"],
-            lifetime=costs.at["battery storage", "lifetime"],
-        )
-
-        # TODO understand/remove sources, data should not be in code
-        # Sources:
-        # [HP]: Henning, Palzer http://www.sciencedirect.com/science/article/pii/S1364032113006710
-        # [B]: Budischak et al. http://www.sciencedirect.com/science/article/pii/S0378775312014759
-
-        network.add(
-            "Link",
-            nodes + " battery charger",
-            bus0=nodes,
-            bus1=nodes + " battery",
-            efficiency=costs.at["battery inverter", "efficiency"] ** 0.5,
-            capital_cost=costs.at["battery inverter", "efficiency"]
-            * costs.at["battery inverter", "capital_cost"],
-            p_nom_extendable=True,
-            carrier="battery",
-            lifetime=costs.at["battery inverter", "lifetime"],
-        )
-
-        network.add(
-            "Link",
-            nodes + " battery discharger",
-            bus0=nodes + " battery",
-            bus1=nodes,
-            efficiency=costs.at["battery inverter", "efficiency"] ** 0.5,
-            marginal_cost=0.0,
-            p_nom_extendable=True,
-            carrier="battery discharger",
-        )
+        add_batteries(network, config, nodes, prov_centroids, costs)
 
     # ============= add lines =========
     # The lines are implemented according to the transport model (no KVL) and without losses.
