@@ -200,8 +200,9 @@ def prepare_network(
     Returns:
         pypsa.Network: network object with additional constraints
     """
-
-    co2_opts = ConfigManager(config).fetch_co2_restriction(co2_pathway, int(plan_year))
+    cfg_manager = ConfigManager(config)
+    cfg_manager.handle_scenarios()
+    co2_opts = cfg_manager.fetch_co2_restriction(co2_pathway, int(plan_year))
     add_co2_constraints_prices(n, co2_opts)
 
     if "clip_p_max_pu" in solve_opts:
@@ -546,7 +547,6 @@ def add_retrofit_constraints(n):
         n.model.add_constraints(lhs == 0, name="Generator-coal-retrofit-" + str(year))
 
 
-
 def add_operational_reserve_margin(n: pypsa.network, config):
     """
     Build operational reserve margin constraints based on the formulation given in
@@ -691,7 +691,7 @@ def solve_network(
         config (dict): the configuration dictionary
         solving (dict): the solving configuration dictionary
         opts (str): optional wildcards such as ll (not used in pypsa-china)
-        
+
     Returns:
         pypsa.Network: the optimized network
     """
@@ -745,11 +745,13 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "solve_networks",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            planning_horizons="2040",
+            # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
+            planning_horizons="2025",
             topology="current+FCG",
-            # heating_demand="positive",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            heating_demand="positive",
+            # configfiles="resources/tmp/pseudo_coupled.yml",
+            configfiles="config/myopic.yml",
         )
     configure_logging(snakemake)
 
@@ -796,7 +798,7 @@ if __name__ == "__main__":
     # HACK to replace pytest monkeypatch
     # which doesn't work as snakemake is a subprocess
     is_test = snakemake.config["run"].get("is_test", False)
-    if not is_test:        
+    if not is_test:
         n = solve_network(
             n,
             config=snakemake.config,
@@ -804,7 +806,7 @@ if __name__ == "__main__":
             opts=opts,
             log_fn=snakemake.log.solver,
         )
-        
+
         # Store dual variables in network components for netcdf export
         export_duals_flag = snakemake.params.solving["options"].get("export_duals", False)
         if export_duals_flag:
