@@ -487,6 +487,24 @@ def add_power_capacities_installed_before_baseyear(
                 location=buses,
             )
 
+        elif generator == "PHS":
+            # pure pumped hydro storage, fixed, 6h energy by default, no inflow
+            n.add(
+                "StorageUnit",
+                capacity.index,
+                suffix="-" + str(grouping_year),
+                bus=buses,
+                carrier="PHS",
+                p_nom=capacity,
+                p_nom_min=capacity,
+                p_nom_extendable=False,
+                max_hours=config["hydro"]["PHS_max_hours"],
+                efficiency_store=np.sqrt(costs.at["PHS", "efficiency"]),
+                efficiency_dispatch=np.sqrt(costs.at["PHS", "efficiency"]),
+                cyclic_state_of_charge=True,
+                marginal_cost=0.0,
+            )
+
         else:
             logger.warning(
                 f"Skipped existing capacitity for {generator}"
@@ -494,7 +512,6 @@ def add_power_capacities_installed_before_baseyear(
             )
 
     return
-
 
 def _add_paidoff_biomass(
     n: pypsa.Network,
