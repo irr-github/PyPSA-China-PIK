@@ -23,7 +23,7 @@ def _previous_horizon(yr) -> int:
 
 # TODO remove coal retrofit from coal
 def calculate_solved_capacities(
-    previous_network: pypsa.Network, year: int, threshold: int = None
+    previous_network: pypsa.Network, year: int, threshold: float = 1e-6
 ) -> pd.DataFrame:
     """
     Calculate the capacities installed in a previous solution.
@@ -31,7 +31,7 @@ def calculate_solved_capacities(
     Args:
         previous_network (pypsa.Network): The solved PyPSA network from the previous horizon.
         year (int): The planning year.
-        threshold (int, optional): Minimum capacity to include. Defaults to None.
+        threshold (float, optional): Minimum capacity to include. Defaults to None.
 
     Returns:
         pd.DataFrame: DataFrame with solved capacities in existing_infrastructure format.
@@ -72,24 +72,28 @@ def calculate_solved_capacities(
     return solved_capacities
 
 
-def get_solved_edges(previous_network: pypsa.Network) -> dict[str, pd.DataFrame]:
-    """Get the previously solved edges
+def get_solved_edges(
+    previous_network: pypsa.Network, carriers=["AC", "H2"]
+) -> dict[str, pd.DataFrame]:
+    """Get the previously solved network edges (transmission lines/pipelines)
     Args:
         previous_network (pypsa.Network): The solved PyPSA network from the previous horizon.
-        year (int): The planning year.
+        carriers (Optional, list): carriers to include
     """
 
     n_p = previous_network
-    connects = n_p.links.query(
-        "bus0.map(@n_p.buses.carrier) == "
-        "bus1.map(@n_p.buses.carrier) & "
-        "carrier == 'AC' & "
-        "not index.str.contains('reverse')"
-    )[["bus0", "bus1", "p_nom_opt", "p_nom"]]
+    edges = {}
+    for carrier in carriers:
+        connects = n_p.links.query(
+            "bus0.map(@n_p.buses.carrier) == "
+            "bus1.map(@n_p.buses.carrier) & "
+            f"carrier == '{carrier}' & "
+            "not index.str.contains('reverse')"
+        )[["bus0", "bus1", "p_nom_opt", "p_nom"]]
 
-    connects["p_nom_opt"] = connects.apply(lambda row: max(row.p_nom_opt, row.p_nom), axis=1)
-
-    return connects[["bus0", "bus1", "p_nom_opt"]]
+        connects["p_nom_opt"] = connects.apply(lambda row: max(row.p_nom_opt, row.p_nom), axis=1)
+        edges[carrier] = connects[["bus0", "bus1", "p_nom_opt"]]
+    return edges
 
 
 if __name__ == "__main__":
@@ -115,14 +119,16 @@ if __name__ == "__main__":
     installed_last_step = calculate_solved_capacities(
         previous_network,
         prev_plan_yr,
-        threshold=config["existing_capacities"].get("threshold", None),
+        threshold=config["existing_capacities"].get("threshold_capacity", None),
     )
 
     installed_all = pd.concat([brownfield_capacities, installed_last_step])
     # TODO Group by name
     # installed_all.groupby([""])
 
-    edges = get_solved_edges(previous_network)
+    edges = get_solved_edges(previous_network, carriers=snakemake.params.edge_carriers)
 
-    installed_all.to_csv(snakemake.output.myopic_capacities)
-    edges.to_csv(snakemake.output.edges, index=False, header=False)
+    installed_all.to_csv(snakemake.output.myopic_capacities, index=False)
+
+    for carrier, df in edges.items():
+        df.to_csv(snakemake.output[f"edges_{carrier}"], index=False, header=False)

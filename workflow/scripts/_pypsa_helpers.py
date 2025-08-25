@@ -15,26 +15,26 @@ logger = logging.getLogger()
 
 # Simplified component mapping - only essential mappings
 COMPONENT_MAPPING = {
-    'generator': 'generators',
-    'link': 'links',
-    'line': 'lines',
-    'store': 'stores',
-    'storageunit': 'storage_units',
-    'bus': 'buses',
-    'globalconstraint': 'global_constraints',
-    'load': 'loads',
-    'transformer': 'transformers',
+    "generator": "generators",
+    "link": "links",
+    "line": "lines",
+    "store": "stores",
+    "storageunit": "storage_units",
+    "bus": "buses",
+    "globalconstraint": "global_constraints",
+    "load": "loads",
+    "transformer": "transformers",
 }
 
 
 def get_location_and_carrier(
-    n: pypsa.Network, c: str, port: str = "", nice_names: bool = True
+    n: pypsa.Network, comp: str, port: str = "", nice_names: bool = True
 ) -> list[pd.Series]:
     """Get component location and carrier.
 
     Args:
         n (pypsa.Network): the network object
-        c (str): component name
+        comp (str): component name
         port (str, optional): port name. Defaults to "".
         nice_names (bool, optional): use nice names. Defaults to True.
 
@@ -43,7 +43,7 @@ def get_location_and_carrier(
     """
 
     # bus = f"bus{port}"
-    bus, carrier = pypsa.statistics.get_bus_and_carrier(n, c, port, nice_names=nice_names)
+    bus, carrier = pypsa.statistics.get_bus_and_carrier(n, comp, port, nice_names=nice_names)
     location = bus.map(n.buses.location).rename("location")
     return [location, carrier]
 
@@ -178,13 +178,8 @@ def calc_generation_share(df, n, carrier):
     supply_data = n.statistics.supply(bus_carrier=carrier, comps="Generator")
     total_supply = supply_data.sum()
     gen_shares = (supply_data / total_supply * 100).dropna()
-    carrier_map = {
-        c.lower(): row["nice_name"]
-        for c, row in n.carriers.iterrows()
-    }
-    gen_shares.index = gen_shares.index.map(
-        lambda idx: carrier_map.get(idx.lower(), idx)
-    )
+    carrier_map = {c.lower(): row["nice_name"] for c, row in n.carriers.iterrows()}
+    gen_shares.index = gen_shares.index.map(lambda idx: carrier_map.get(idx.lower(), idx))
     df = df.copy()
     df["GenShare"] = gen_shares
     return df
@@ -471,15 +466,6 @@ def shift_profile_to_planning_year(data: pd.DataFrame, planning_yr: int | str) -
     return data
 
 
-def update_p_nom_max(n: pypsa.Network) -> None:
-    # if extendable carriers (solar/onwind/...) have capacity >= 0,
-    # e.g. existing assets from the OPSD project are included to the network,
-    # the installed capacity might exceed the expansion limit.
-    # Hence, we update the assumptions.
-
-    n.generators.p_nom_max = n.generators[["p_nom_min", "p_nom_max"]].max(1)
-
-
 def store_duals_to_network(network: pypsa.Network) -> None:
     """Store dual variables in network components so they get saved to netcdf file."""
     model = getattr(network, "model", None)
@@ -497,9 +483,10 @@ def store_duals_to_network(network: pypsa.Network) -> None:
             constraint_type = dual_name
 
         comp_name = COMPONENT_MAPPING.get(component_type.lower())
-        comp_obj = getattr(network, comp_name, None)
-        if comp_obj is None:
+        if comp_name is None or comp_name not in network.__dir__():
             continue
+        else:
+            comp_obj = getattr(network, comp_name)
 
         # ---- Standardize attr name ----
         attr = f"mu_{re.sub(r'[^a-zA-Z0-9_]', '_', constraint_type)}"
@@ -534,6 +521,3 @@ def store_duals_to_network(network: pypsa.Network) -> None:
                     val = 0.0
                 series = pd.Series(val, index=comp_obj.index)
             comp_obj[attr] = series
-
-
-

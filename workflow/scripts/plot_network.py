@@ -640,11 +640,12 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "plot_network",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2",
+            co2_pathway="exp175default",
+            # co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2",
             planning_horizons="2030",
-            # heating_demand="positive",
-            configfiles=["resources/tmp/remind_coupled_cg.yaml"],
+            heating_demand="positive",
+            # configfiles=["resources/tmp/remind_coupled_cg.yaml"],
+            configfiles="config/myopic.yml",
         )
     set_plot_test_backend(snakemake.config)
     configure_logging(snakemake, logger=logger)
@@ -673,7 +674,7 @@ if __name__ == "__main__":
             "Network timespan is not one year, this may cause issues with the CAPEX calculation,"
             + " which is referenced to the time period and not directly annualised"
         )
-    additions = True if config["foresight"] != "overnight" else False
+    additions = True if config["foresight"] == "overnight" else False
     plot_cost_map(
         n,
         opts=config["plotting"],
