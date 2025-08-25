@@ -140,7 +140,8 @@ def add_power_capacities_installed_before_baseyear(
     installed_capacities: pd.DataFrame,
 ):
     """
-    Add existing power capacities to the network
+    Add existing power capacities to the network.
+    Note: hydro dams brownfield handled by prepare_network
 
     Args:
         n (pypsa.Network): the network
@@ -512,6 +513,7 @@ def add_power_capacities_installed_before_baseyear(
             )
 
     return
+
 
 def _add_paidoff_biomass(
     n: pypsa.Network,

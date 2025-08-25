@@ -55,18 +55,21 @@ def add_build_year_to_new_assets(n: pypsa.Network, baseyear: int):
             c.pnl[attr].rename(columns=renamed, inplace=True)
 
 
-def update_edges(n: pypsa.Network, prev_edges: pd.DataFrame, lossy_edges: bool):
+def update_edges(n: pypsa.Network, prev_edges: pd.DataFrame, lossy_edges: bool, carrier="AC"):
     """Update the p_nom of the HV network edges based on the previous brownfield state
     Args:
         n (pypsa.Network): the pypsa network to update with a previous state
         prev_edges (pd.DataFrame): bronwfield edges (myopic output or brownfield input)
         lossy_edges (bool): whether edges are lossy (config["line_losses"] adds 'positive' suffix)
+        carrier (Optional, str): the link carrier. Defaults to AC
     """
+    if prev_edges.empty:
+        return
 
     connects_mask = n.links.query(
         "bus0.map(@n.buses.carrier) == "
         "bus1.map(@n.buses.carrier) & "
-        "carrier == 'AC' & "
+        f"carrier == '{carrier}' & "
         "not index.str.contains('reverse')"
     ).index
 
@@ -109,7 +112,11 @@ if __name__ == "__main__":
 
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)
     existing_capacities = filter_capacities(existing_capacities, cost_year)
-    prev_edges = pd.read_csv(snakemake.input.edges, header=None, names=["bus0", "bus1", "p_nom"])
+    prev_edges = {}
+    for edge_carrier in snakemake.params.edge_carriers:
+        prev_edges[edge_carrier] = pd.read_csv(
+            snakemake.input[f"edges_{edge_carrier}"], header=None, names=["bus0", "bus1", "p_nom"]
+        )
     costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
 
     if snakemake.params["add_baseyear_to_assets"]:
@@ -127,7 +134,8 @@ if __name__ == "__main__":
 
     # add to the network
     add_power_capacities_installed_before_baseyear(n, costs, config, installed)
-    update_edges(n, prev_edges, config["line_losses"])
+    for edge_carrier in prev_edges:
+        update_edges(n, prev_edges[edge_carrier], config["line_losses"], edge_carrier)
 
     if config["Techs"].get("coal_ccs_retrofit", False):
         add_coal_retrofit(n, costs, cost_year)
