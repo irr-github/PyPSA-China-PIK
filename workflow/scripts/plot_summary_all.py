@@ -712,7 +712,7 @@ def plot_pathway_co2(file_list: list, config: dict, fig_name=None):
 
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(handles, labels, ncol=1, bbox_to_anchor=[1, 1], loc="upper left")
-    ax.set_ylim([0, co2_balance_df.sum(axis=1).max() * 1.1])
+    ax.set_ylim([co2_balance_df.min().min() * 1.1, co2_balance_df.sum(axis=1).max() * 1.1])
     fig.tight_layout()
     if fig_name is not None:
         fig.savefig(fig_name, transparent=config["transparent"])
@@ -841,10 +841,10 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "plot_summary",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
+            # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
             heating_demand="positive",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            configfiles="config/myopic.yml",
         )
     configure_logging(snakemake)
     set_plot_test_backend(snakemake.config)
