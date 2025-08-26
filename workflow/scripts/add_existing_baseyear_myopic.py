@@ -1,4 +1,13 @@
-"""Add solution to all brownfield capacity files"""
+"""Add solution to all brownfield capacity files
+
+The approach is based on adding previously solved capacities to the brownfield
+ capacities in prepare_myopic_capacities and adding them to the network.
+ The downside is that "all" components have to be exported and reimported.
+
+Another possible approach is to copy the components from the previous solution
+This was the original PyPSA-China approach, with p_max_pu copied from n.generators_t etc.
+However more work is then needed to respect technical potentials, especially with multiple VRE grades.
+"""
 
 # TODO ADD CCS TO EXISTING BASE YEAR TECHS
 
@@ -92,7 +101,7 @@ if __name__ == "__main__":
             "add_existing_baseyear_myopic",
             topology="current+FCG",
             co2_pathway="exp175default",
-            planning_horizons="2025",
+            planning_horizons="2030",
             configfiles="config/myopic.yml",
             heating_demand="positive",
         )
