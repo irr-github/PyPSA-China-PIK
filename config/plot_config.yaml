@@ -501,10 +501,12 @@ plotting:
   - solar
   - OCGT
   - gas OCGT
+  - Open-Cycle Gas
   - battery storage
   - battery discharger
   - battery
   - Battery
+  - PHS
   - resistive heater
   - H2
   - H2 pipeline
