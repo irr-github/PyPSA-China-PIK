@@ -33,7 +33,7 @@ CARRIER_MAP = {
     "solar thermal": "central solar thermal",
     "onwind": "onwind",
     "offwind": "offwind",
-    "coal boiler": "central coal boiler",
+    "coal boiler": "coal boiler central",
     "ground heat pump": "central ground-sourced heat pump",
     "nuclear": "nuclear",
     "PHS": "PHS",

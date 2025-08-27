@@ -34,7 +34,7 @@ BASEYEAR = min([int(y) for y in config["scenario"]["planning_horizons"]])
 
 # ====== make paths =======
 path_manager = PathManager(config)
-RESULTS_DIR = path_manager.results_dir()
+RESULTS_DIR = path_manager.results_dir() # wildcards in here
 DERIVED_DATA = path_manager.derived_data_dir(shared=False)
 DERIVED_COMMON = path_manager.derived_data_dir(shared=True)
 DERIVED_CUTOUT = DERIVED_COMMON + f"/cutout_{CUTOUT_NAME}"
@@ -290,6 +290,7 @@ if config["foresight"] in ["overnight"]:
 
     add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
 
+
     rule prepare_networks:
         input:
             edge_path = config["edge_paths"].get(config["scenario"]["topology"], None),
@@ -364,48 +365,28 @@ elif config["foresight"] == "myopic":
         prev_idx = max(0, years.index(yr)-1)
         return RESULTS_DIR+ f"/postnetworks/ntwk_{years[prev_idx]}.nc"
 
-    def get_myopic_capacity(wildcards) -> os.PathLike:
-        """find myopic capacity"""
-        yr = int(wildcards.planning_horizons)
-
-        if yr == int(BASEYEAR):
-            return DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
-
-        else:
-            years =  sorted([int(y) for y in config["scenario"]["planning_horizons"]])
-            prev_idx = max(0, years.index(yr)-1)
-            return RESULTS_DIR+ f'/prenetworks-brownfield/input_capacities_{years[prev_idx]}.csv'
-
-    rule update_brownfield_with_solved:
-        """ update installed capacity iteratively with next solution"""
-        input:
-            solved_network=find_last_solution,
-            installed_capacities = get_myopic_capacity, # last solution capacity or data
-        output:
-            myopic_capacities = RESULTS_DIR + '/prenetworks-brownfield/input_capacities_{planning_horizons}.csv',
-            edges = RESULTS_DIR + '/prenetworks-brownfield/input_edges_{planning_horizons}.csv',
-        script: "scripts/prepare_myopic_capacity.py"
-
-    # dummy for snakemake
     rule add_existing_baseyear_myopic:
-        params:
-            baseyear = BASEYEAR,
-            add_baseyear_to_assets = False,
+        """Near duplicate of the overnight version""" # TODO merge?
         input:
-            # solved_network=previous_horizon,
-            edges = RESULTS_DIR +'/prenetworks-brownfield/input_edges_{planning_horizons}.csv',
             network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
             cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5",
-            installed_capacities = get_myopic_capacity,
-        output: RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}.nc'
-        threads: 1
-        resources: mem_mb=2000
+            installed_capacities = DERIVED_DATA+ '/existing_infrastructure/capacities.csv',
+        output: RESULTS_DIR+ '/prenetworks-brownfield-nomyopic/ntwk_{planning_horizons}.nc'
         script: "scripts/add_existing_baseyear_myopic.py"
-        # wildcard_constraints:
-        #     planning_horizons=config['scenario']['planning_horizons'][0] #only applies to baseyear
 
-
+    rule update_brownfield_with_solved:
+        """Update installed capacity iteratively with next solution
+        Add retrofit options"""
+        params:
+            baseyear = BASEYEAR,
+        input:
+            tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
+            solved_network=find_last_solution,
+            network=RESULTS_DIR+ '/prenetworks-brownfield-nomyopic/ntwk_{planning_horizons}.nc',
+        output:
+            next_network = RESULTS_DIR+ f'/prenetworks{add_brownfield}/' +'ntwk_{planning_horizons}.nc',
+        script: "scripts/update_w_previous_myopic.py"
 
 rule solve_networks:
     params:
