@@ -1,8 +1,13 @@
 # coding: utf-8
 """
 Functions to add brownfield capacities to the network for a reference year
+- adds VREs per grade and corrects technical potential. Best available grade is chosen
 """
-# TODO improve docstring
+# SPDX-FileCopyrightText: : 2025 The PyPSA-China-PIK Authors
+#
+# SPDX-License-Identifier: MIT
+
+
 import logging
 import numpy as np
 import pandas as pd
@@ -276,6 +281,7 @@ def add_power_capacities_installed_before_baseyear(
                 bus=buses,
                 carrier=carrier_map[generator],
                 p_nom=capacity,
+                p_nom_max=capacity,
                 p_nom_min=capacity,
                 p_nom_extendable=False,
                 p_max_pu=config["nuclear_reactors"]["p_max_pu"] if generator == "nuclear" else 1,
@@ -312,6 +318,7 @@ def add_power_capacities_installed_before_baseyear(
                 # NB: fixed cost is per MWel
                 p_nom=capacity / costs.at[costs_key, "efficiency"],
                 p_nom_min=capacity / costs.at[costs_key, "efficiency"],
+                p_nom_max=capacity / costs.at[costs_key, "efficiency"],
                 p_nom_extendable=False,
                 efficiency=costs.at[costs_key, "efficiency"],
                 build_year=build_year,
@@ -338,6 +345,7 @@ def add_power_capacities_installed_before_baseyear(
                 carrier=carrier_map[generator],
                 p_nom=capacity,
                 p_nom_min=capacity,
+                p_nom_max=capacity,
                 p_nom_extendable=False,
                 marginal_cost=costs.at["central " + generator, "marginal_cost"],
                 p_max_pu=p_max_pu,
@@ -361,6 +369,7 @@ def add_power_capacities_installed_before_baseyear(
                 * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
                 p_nom=capacity / hist_efficiency,
                 p_nom_min=capacity / hist_efficiency,
+                p_nom_max=capacity / hist_efficiency,
                 p_nom_extendable=False,
                 efficiency=hist_efficiency,
                 p_nom_ratio=1.0,
@@ -381,6 +390,7 @@ def add_power_capacities_installed_before_baseyear(
                 * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
                 p_nom=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
                 p_nom_min=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
+                p_nom_max=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
                 p_nom_extendable=False,
                 efficiency=hist_efficiency / costs.at["central coal CHP", "c_v"],
                 build_year=build_year,
@@ -423,6 +433,7 @@ def add_power_capacities_installed_before_baseyear(
                 * costs.at["central gas CHP", "VOM"],  # NB: VOM is per MWel
                 p_nom=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
                 p_nom_min=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
+                p_nom_max=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
                 p_nom_extendable=False,
                 efficiency=hist_efficiency / costs.at["central gas CHP", "c_v"],
                 build_year=build_year,
@@ -446,6 +457,7 @@ def add_power_capacities_installed_before_baseyear(
                 * costs.at[cat.lstrip() + generator, "capital_cost"],
                 p_nom=capacity / costs.at[cat.lstrip() + generator, "efficiency"],
                 p_nom_min=capacity / costs.at[cat.lstrip() + generator, "efficiency"],
+                p_nom_max=capacity / costs.at[cat.lstrip() + generator, "efficiency"],
                 p_nom_extendable=False,
                 efficiency=costs.at[cat.lstrip() + generator, "efficiency"],
                 build_year=build_year,
@@ -481,6 +493,7 @@ def add_power_capacities_installed_before_baseyear(
                 * costs.at["decentral ground-sourced heat pump", "marginal_cost"],
                 p_nom=capacity / costs.at["decentral ground-sourced heat pump", "efficiency"],
                 p_nom_min=capacity / costs.at["decentral ground-sourced heat pump", "efficiency"],
+                p_nom_max=capacity / costs.at["decentral ground-sourced heat pump", "efficiency"],
                 p_nom_extendable=False,
                 build_year=build_year,
                 lifetime=costs.at["decentral ground-sourced heat pump", "lifetime"],
@@ -497,12 +510,14 @@ def add_power_capacities_installed_before_baseyear(
                 carrier="PHS",
                 p_nom=capacity,
                 p_nom_min=capacity,
+                p_nom_max=capacity,
                 p_nom_extendable=False,
                 max_hours=config["hydro"]["PHS_max_hours"],
                 efficiency_store=np.sqrt(costs.at["PHS", "efficiency"]),
                 efficiency_dispatch=np.sqrt(costs.at["PHS", "efficiency"]),
                 cyclic_state_of_charge=True,
                 marginal_cost=0.0,
+                location=buses,
             )
 
         else:
@@ -671,7 +686,7 @@ def filter_capacities(existing_df: pd.DataFrame, plan_year: int) -> pd.DataFrame
 
 
 # TODO add coal CCS retrofit option
-def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
+def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, config: dict):
     """
     Optional retrofit of brownfield coal power / CHP with CCS (Carbon Capture and Storage) technology.
     Requires additional constraint in solve_network.extra_functionality
@@ -679,23 +694,27 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         n (pypsa.Network): The PyPSA network object to modify.
         costs (pd.DataFrame): techno-economic data.
         plan_year (int): The year in which the retrofit is planned, used to set build year and calculate remaining lifetime
+        config (dict): the configuration
     """
-    config = n.config
 
     if config["existing_capacities"].get("collapse_years", False):
         raise ValueError(
             "Collapse pf brownfield years are not currently supported for coal CCS retrofitting."
         )
 
-    ramps = config.get(
-        "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
-    )
-    ramps = ramps.get("coal", {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan})
+    # get ramping options
+    default = {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}
+    ramps = config.get("fossil_ramps", {"coal": default}).get("coal", default)
     p_max_pu = ramps.get("p_max_pu", 0.9)
     # adjust ramp to snapshots since ramp is per timestep
     ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
 
-    coal_brownfield = n.generators.query("carrier == 'coal' & p_nom_extendable == False")
+    # select brownfield coal
+    query = "carrier == 'coal' and p_nom !=0 and not index.str.contains('fuel')"
+    coal_brownfield = n.generators.query(query)
+    # make the coal brownfield extendable (constrain in solve constraints)
+    n.generators.loc[coal_brownfield.index, "p_nom_extendable"] = True
+    # add retrofit
     n.add(
         "Generator",
         name=coal_brownfield.index + "-ccs retrofit",
@@ -706,14 +725,19 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         p_max_pu=p_max_pu,
         ramp_limit_up=ramps["ramp_limit_up"],
         ramp_limit_down=ramps["ramp_limit_down"],
-        build_year=plan_year,
-        lifetime=plan_year - coal_brownfield.build_year.values,
+        # helps with coal retrofit constraints to keep original build year
+        build_year=coal_brownfield.build_year,
+        lifetime=costs.at["coal", "lifetime"] - (plan_year - coal_brownfield.build_year.values),
         capital_cost=costs.at["retrofit", "capital_cost"],
         marginal_cost=costs.at["coal ccs", "marginal_cost"],
         efficiency=costs.at["coal ccs", "efficiency"],
+        location=coal_brownfield.bus.values,
     )
 
-    coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom_extendable == False")
+    coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom !=0")
+    # make the coal brownfield extendable (constrain in solve constraints)
+    n.links.loc[coal_CHP_brownfield.index, "p_nom_extendable"] = True
+
     chp_nodes = coal_CHP_brownfield.bus1
     ccs_fuel_bus = chp_nodes + "coal fuel ccs"
     n.add(
@@ -732,7 +756,7 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         carrier="coal ccs",
         p_nom_extendable=False,
         p_nom=1e8,
-        marginal_cost=costs.at["coal", "fuel"],
+        marginal_cost=costs.at["coal ccs", "fuel"],
     )
 
     n.add(
@@ -742,18 +766,20 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         bus1=chp_nodes,
         p_nom_extendable=True,
         p_nom_max=coal_CHP_brownfield.p_nom.values,
-        build_year=plan_year,
-        lifetime=plan_year - coal_CHP_brownfield.build_year.values,
+        # helps with retrofit constraints to keep original buildyear
+        build_year=coal_CHP_brownfield.build_year.values,
+        lifetime=costs.at["central coal CHP", "lifetime"]
+        - (plan_year - coal_CHP_brownfield.build_year.values),
         marginal_cost=costs.at["central coal CHP", "efficiency"]
         * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
         # TODO check
         capital_cost=costs.at["retrofit", "capital_cost"],
-        *costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
         efficiency=costs.at["central coal CHP", "efficiency"],
         # TODO CHECK this gives realistic power to heat ratios for china
         c_b=costs.at["central coal CHP", "c_b"],
         p_nom_ratio=1.0,
         carrier="CHP coal CCS",
+        location=chp_nodes,
     )
 
     boiler_brownfield = n.links.query(
@@ -769,7 +795,9 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int):
         marginal_cost=costs.at["central coal CHP", "efficiency"]
         * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
         efficiency=costs.at["central coal CHP", "efficiency"] / costs.at["central coal CHP", "c_v"],
+        build_year=coal_CHP_brownfield.build_year.values,
         lifetime=costs.at["central coal CHP", "lifetime"],
+        location=chp_nodes,
     )
 
 
@@ -833,7 +861,7 @@ if __name__ == "__main__":
         add_paid_off_capacity(n, paid_off_caps, costs)
 
     if config["Techs"].get("coal_ccs_retrofit", False):
-        add_coal_retrofit(n, costs, cost_year)
+        add_coal_retrofit(n, costs, cost_year, config)
 
     compression = snakemake.config.get("io", None)
     if compression:

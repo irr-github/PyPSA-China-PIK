@@ -5,7 +5,7 @@ These functions are currently only for the overnight mode. Myopic pathway mode c
         duplicates which need to merged in the future. Idem for solve_network.py
 """
 
-# SPDX-FileCopyrightText: : 2022 The PyPSA-China Authors
+# SPDX-FileCopyrightText: : 2025 The PyPSA-China-PIK Authors
 #
 # SPDX-License-Identifier: MIT
 
@@ -409,8 +409,7 @@ def add_conventional_generators(
             efficiency=costs.at["coal", "efficiency"],
             marginal_cost=costs.at["coal", "marginal_cost"],
             # TODO CHECK THIS
-            capital_cost=costs.at["coal", "efficiency"]
-            * costs.at["coal", "capital_cost"],  # NB: capital cost is per MWel
+            capital_cost=costs.at["coal", "capital_cost"],  # NB: capital cost is per MWel
             lifetime=costs.at["coal", "lifetime"],
             ramp_limit_up=ramps["ramp_limit_up"],
             ramp_limit_down=ramps["ramp_limit_down"],
@@ -428,8 +427,7 @@ def add_conventional_generators(
                 efficiency=costs.at["coal ccs", "efficiency"],
                 marginal_cost=costs.at["coal ccs", "marginal_cost"],
                 # TODO CHECK THIS
-                capital_cost=costs.at["coal ccs", "efficiency"]
-                * costs.at["coal ccs", "capital_cost"],  # NB: capital cost is per MWel
+                capital_cost=costs.at["coal ccs", "capital_cost"],  # NB: capital cost is per MWel
                 lifetime=costs.at["coal ccs", "lifetime"],
                 p_max_pu=0.9,  # planned and forced outages
             )
@@ -981,15 +979,7 @@ def add_heat_coupling(
         and config["add_H2"]
         and config.get("heat_coupling", False)
     ):
-        network.add(
-            "Bus",
-            nodes,
-            suffix=" central H2 CHP",
-            x=prov_centroids.x,
-            y=prov_centroids.y,
-            carrier="H2",
-            location=nodes,
-        )
+
         network.add(
             "Link",
             name=nodes + " central H2 CHP",
@@ -1490,9 +1480,6 @@ def prepare_network(
             bus=nodes,
             carrier="PHS",
             p_nom_extendable=True,
-            # p_nom_max=hydrocapa_df.loc[phss]["MW"],
-            # p_nom=hydrocapa_df.loc[phss]["MW"],
-            # p_nom_min=hydrocapa_df.loc[phss]["MW"],
             max_hours=config["hydro"]["PHS_max_hours"],
             efficiency_store=np.sqrt(costs.at["PHS", "efficiency"]),
             efficiency_dispatch=np.sqrt(costs.at["PHS", "efficiency"]),

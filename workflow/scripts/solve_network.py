@@ -200,6 +200,7 @@ def prepare_network(
     Returns:
         pypsa.Network: network object with additional constraints
     """
+    # BUG: does not work for budget in mock_snakemake mode
     cfg_manager = ConfigManager(config)
     # cfg_manager.handle_scenarios()
     co2_opts = cfg_manager.fetch_co2_restriction(co2_pathway, int(plan_year))
@@ -441,7 +442,7 @@ def add_remind_paid_off_constraints(n: pypsa.Network) -> None:
                 name=f"paidoff_cap_totals_{component.lower()}",
             )
 
-    # === ensure normal e/p_nom_max is respected for (paid_off + normal) components
+    # === ensure normal e_nom_max & p_nom_max str respected for (paid_off + normal) components
     # e.g. if PV has 100MW tech potential at nodeA, paid_off+normal p_nom_opt <100MW
     for component in ["Generator", "Link", "Store"]:
         paidoff_comp = getattr(n, component.lower() + "s").copy()
@@ -496,55 +497,33 @@ def add_retrofit_constraints(n):
     Args:
         n (pypsa.Network): the pypsa network object to which's model the constraints are added
     """
-    p_nom_max = pd.read_csv("resources/data/p_nom/p_nom_max_cc.csv", index_col=0)
-    p_nom_max = pd.read_csv("resources/data/p_nom/p_nom_max_cc.csv", index_col=0)
-    planning_horizon = snakemake.wildcards.planning_horizons
-    for year in range(int(planning_horizon) - 40, 2021, 5):
-        coal = (
-            n.generators[
-                (n.generators.carrier == "coal power plant") & (n.generators.build_year == year)
-            ]
-            .query("p_nom_extendable")
-            .index
-        )
-        Bus = (
-            n.generators[
-                (n.generators.carrier == "coal power plant") & (n.generators.build_year == year)
-            ]
-            .query("p_nom_extendable")
-            .bus.values
-        )
-        coal_retrofit = (
-            n.generators[
-                n.generators.index.str.contains("retrofit")
-                & (n.generators.build_year == year)
-                & n.generators.bus.isin(Bus)
-            ]
-            .query("p_nom_extendable")
-            .index
-        )
-        coal_retrofitted = (
-            n.generators[
-                n.generators.index.str.contains("retrofit")
-                & (n.generators.build_year == year)
-                & n.generators.bus.isin(Bus)
-            ]
-            .query("~p_nom_extendable")
-            .groupby("bus")
-            .sum()
-            .p_nom_opt
-        )
+    query = "carrier == 'coal' and p_nom !=0 and not index.str.contains('fuel')"
+    retrofit_q = "carrier=='coal ccs' and index.str.contains('retrofit') and not index.str.contains('fuel') and p_nom !=0"
 
-        lhs = (
-            n.model["Generator-p_nom"].loc[coal]
-            + n.model["Generator-p_nom"].loc[coal_retrofit]
-            - (
-                p_nom_max[str(year)].loc[Bus]
-                - coal_retrofitted.reindex(p_nom_max[str(year)].loc[Bus].index, fill_value=0)
-            ).values
-        )
+    retrofittable = n.generators.query(query)
+    retrofit = n.generators.query(retrofit_q)
+    retrofit_potential = retrofittable.p_nom_max
 
-        n.model.add_constraints(lhs == 0, name="Generator-coal-retrofit-" + str(year))
+    lhs = (
+        n.model["Generator-p_nom"].loc[retrofittable.index]
+        + n.model["Generator-p_nom"].loc[retrofit.index]
+        - retrofit_potential
+    )
+    if not lhs.empty:
+        n.model.add_constraints(lhs == 0, name="Generator-coal-retrofit")
+
+    # do the same for CHP
+    query = "carrier == 'CHP coal' and p_nom !=0 and not index.str.contains('fuel')"
+    retrofitted_q = "carrier=='CHP coal CCS' and index.str.contains('retrofit') and p_nom !=0"
+    retrofittable = n.links.query(query)
+    retrofit = n.links.query(retrofitted_q)
+    lhs = (
+        n.model["Link-p_nom"].loc[retrofittable.index]
+        + n.model["Link-p_nom"].loc[retrofit.index]
+        - retrofit_potential
+    )
+    if not lhs.empty:
+        n.model.add_constraints(lhs == 0, name="Link-CHP-coal-retrofit")
 
 
 def add_operational_reserve_margin(n: pypsa.network, config):
