@@ -111,7 +111,9 @@ def add_previous_optima(
         #   because tech potential is corrected for in add_existing_baseyear
         # Align indexes and sum p_nom_max for overlapping indexes
         original_index = comp.index.copy()
-        comp.index = comp.index + f"-{previous_year}"
+        comp.index = (comp.index + f"-{previous_year}").str.replace(
+            f"-{previous_year}-{previous_year}", f"-{previous_year}"
+        )
         brownfield_exist = getattr(network, component).query("index in @comp.index")
         comp.loc[brownfield_exist.index, f"{prefix}_nom"] += brownfield_exist[f"{prefix}_nom"]
 
@@ -149,6 +151,7 @@ def correct_retrofitted_potentials(network: pypsa.Network):
 
     network.generators.loc[updated.index, "p_nom_max"] = updated["p_nom_max"]
     network.generators.loc[updated.index, "p_nom"] = updated["p_nom_max"]
+    network.generators.loc[updated.index, "p_nom_min"] = 0
 
     # do the same for CHP
     query = "carrier == 'CHP coal' and p_nom !=0 and not index.str.contains('fuel')"
@@ -165,6 +168,7 @@ def correct_retrofitted_potentials(network: pypsa.Network):
 
     network.generators.loc[updated.index, "p_nom_max"] = updated["p_nom_max"]
     network.generators.loc[updated.index, "p_nom"] = updated["p_nom_max"]
+    network.generators.loc[updated.index, "p_nom_min"] = 0
 
 
 def remove_end_of_life(network: pypsa.Network, year: int):
@@ -187,7 +191,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "update_brownfield_with_solved",
             co2_pathway="exp175default",
-            planning_horizons="2025",
+            planning_horizons="2030",
             topology="current+FCG",
             heating_demand="positive",
             configfiles="config/myopic.yml",
@@ -204,6 +208,8 @@ if __name__ == "__main__":
         prev_year = _find_last_year(yr, years)
         prev_solution = pypsa.Network(snakemake.input.solved_network)
         min_capacity = config["existing_capacities"]["threshold_capacity"]
+
+        remove_end_of_life(prev_solution, yr)
 
         add_previous_brownfield(network, prev_solution, min_capacity)
 

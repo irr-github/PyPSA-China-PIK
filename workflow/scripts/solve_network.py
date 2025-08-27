@@ -517,6 +517,7 @@ def add_retrofit_constraints(n):
     retrofitted_q = "carrier=='CHP coal CCS' and index.str.contains('retrofit') and p_nom !=0"
     retrofittable = n.links.query(query)
     retrofit = n.links.query(retrofitted_q)
+    retrofit_potential = retrofittable.p_nom_max
     lhs = (
         n.model["Link-p_nom"].loc[retrofittable.index]
         + n.model["Link-p_nom"].loc[retrofit.index]

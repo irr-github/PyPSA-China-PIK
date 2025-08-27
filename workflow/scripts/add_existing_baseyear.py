@@ -714,6 +714,8 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
     coal_brownfield = n.generators.query(query)
     # make the coal brownfield extendable (constrain in solve constraints)
     n.generators.loc[coal_brownfield.index, "p_nom_extendable"] = True
+    n.generators.loc[coal_brownfield.index, "p_nom_min"] = 0
+
     # add retrofit
     n.add(
         "Generator",
@@ -737,6 +739,7 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
     coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom !=0")
     # make the coal brownfield extendable (constrain in solve constraints)
     n.links.loc[coal_CHP_brownfield.index, "p_nom_extendable"] = True
+    n.links.loc[coal_CHP_brownfield.index, "p_nom_min"] = 0
 
     chp_nodes = coal_CHP_brownfield.bus1
     ccs_fuel_bus = chp_nodes + "coal fuel ccs"
