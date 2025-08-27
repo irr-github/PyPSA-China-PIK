@@ -110,7 +110,7 @@ def load_costs(
     costs.at["OCGT", "fuel"] = costs.at["gas", "fuel"]
     costs.at["CCGT", "fuel"] = costs.at["gas", "fuel"]
     costs.at["CCGT-CCS", "fuel"] = costs.at["gas", "fuel"]
-
+    costs.at["coal ccs", "fuel"] = costs.at["coal", "fuel"]
     costs["marginal_cost"] = costs["VOM"] + costs["fuel"] / costs["efficiency"]
 
     costs = costs.rename(columns={"CO2 intensity": "co2_emissions"})
