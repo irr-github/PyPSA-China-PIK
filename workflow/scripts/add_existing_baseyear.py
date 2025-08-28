@@ -65,6 +65,20 @@ def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series)
     return pd.DataFrame(data=allocation, columns=grade_capacities.index, index=availability.index)
 
 
+def add_base_year(n: pypsa.Network, plan_year: int):
+    """Add base year to new builds
+
+    Args:
+        n (pypsa.Network): the network
+        plan_year (int): the plan year
+    """
+
+    for component in ["links", "generators"]:
+        comp = getattr(n, component)
+        mask = comp.query("p_nom_extendable==True").index
+        comp.loc[mask, "build_year"] = plan_year
+
+
 def add_existing_vre_capacities(
     n: pypsa.Network,
     costs: pd.DataFrame,
@@ -212,7 +226,7 @@ def add_power_capacities_installed_before_baseyear(
     df.grouping_year = df.grouping_year.astype(int, errors="ignore")
     # TODO: exclude collapse of coal & coal CHP IF CCS retrofitting is enabled
     if config["existing_capacities"].get("collapse_years", False):
-        df.grouping_year = "brownwfield"
+        df.grouping_year = "brownfield"
 
     df_ = df.pivot_table(
         index=["grouping_year", "tech_clean", "resource_class"],
@@ -229,7 +243,8 @@ def add_power_capacities_installed_before_baseyear(
     # TODO do we really need to loop over the years? / so many things?
     # something like df_.unstack(level=0) would be more efficient
     for grouping_year, generator, resource_grade in df_.index:
-        build_year = 0 if grouping_year == "brownwfield" else grouping_year
+        build_year = -1 if grouping_year == "brownfield" else grouping_year
+        
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
         if not carrier_map.get(generator, "missing") in defined_carriers:
             logger.warning(
@@ -819,7 +834,7 @@ if __name__ == "__main__":
             co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
             planning_horizons="2030",
             configfiles="resources/tmp/pseudo_coupled.yml",
-            # heating_demand="positive",
+            heating_demand="positive",
         )
 
     configure_logging(snakemake, logger=logger)
@@ -840,6 +855,7 @@ if __name__ == "__main__":
     vre_techs = snakemake.params["vre_carriers"]
 
     n = pypsa.Network(snakemake.input.network)
+    add_base_year(n, cost_year)
     n_years = n.snapshot_weightings.generators.sum() / YEAR_HRS
 
     costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
