@@ -22,6 +22,7 @@ from _helpers import configure_logging, mock_snakemake
 from constants import YEAR_HRS
 from add_electricity import load_costs
 from add_existing_baseyear import (
+    add_base_year,
     add_existing_vre_capacities,
     add_power_capacities_installed_before_baseyear,
     filter_capacities,
@@ -60,6 +61,7 @@ if __name__ == "__main__":
     data_paths = {k: v for k, v in snakemake.input.items()}
 
     n = pypsa.Network(snakemake.input.network)
+    add_base_year(n, cost_year)
     n_years = n.snapshot_weightings.generators.sum() / YEAR_HRS
 
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)

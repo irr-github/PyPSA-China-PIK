@@ -56,7 +56,8 @@ def add_previous_brownfield(network: pypsa.Network, previous_network: pypsa.Netw
 
         # previously network brownfield
         query = f"{prefix}_nom_extendable==False and abs({prefix}_nom_opt) > {threshold}"
-        query += " and carrier not in @EXCLUDE_CARRIERS"
+        # coal fuel must be excluded due to retrofit being added later
+        query += " and carrier not in @EXCLUDE_CARRIERS and not index.str.contains('coal fuel')"
         comp = getattr(previous_network, component).query(query).copy()
 
         # add previous solution to network (overwrites brownfield from add_existing_baseyear_myopic)
@@ -97,29 +98,41 @@ def add_previous_optima(
         query = f"{prefix}_nom_extendable==True and abs({prefix}_nom_opt) > {threshold}"
         query += " and carrier not in @EXCLUDE_CARRIERS"
         comp = getattr(previous_network, component).query(query).copy()
-
+        if component == "generators":
+            mask = comp.bus.map(network.buses.carrier).isin(["AC", "H2", "heat"])
+            comp = comp.loc[mask]
         comp[f"{prefix}_nom"] = comp[f"{prefix}_nom_opt"]
         comp[f"{prefix}_nom_extendable"] = False
         comp["build_year"] = previous_year
         comp["capital_cost"] = 0  # paid-off
 
         # correct technical potentials (subtract brownfield from avail)
-        new_max = comp[f"{prefix}_nom_max"] - comp[f"{prefix}_nom_opt"]
-        getattr(network, component).loc[comp.index, f"{prefix}_nom_max"] = new_max
+        new_comps = getattr(network, component)  # noqa: F841
+        comp_ = comp.query("index in @new_comps.index")
+        new_max = comp_[f"{prefix}_nom_max"] - comp_[f"{prefix}_nom_opt"]
+        getattr(network, component).loc[comp_.index, f"{prefix}_nom_max"] = new_max
+
+        # add build year to comp index if needed
+        original_index = comp.index.copy()
+        comp["name"] = comp.apply(
+            lambda row: (
+                row.name + f"-{previous_year}"
+                if (row.build_year == previous_year) and (row.name.find("retrofit") == -1)
+                else row.name
+            ),
+            axis=1,
+        )
+        comp.set_index("name", drop=True, inplace=True)
 
         # combine any existing capacities for that year and brownfield
         # this needs to be done after tech potential correction
         #   because tech potential is corrected for in add_existing_baseyear
         # Align indexes and sum p_nom_max for overlapping indexes
-        original_index = comp.index.copy()
-        comp.index = (comp.index + f"-{previous_year}").str.replace(
-            f"-{previous_year}-{previous_year}", f"-{previous_year}"
-        )
         brownfield_exist = getattr(network, component).query("index in @comp.index")
         comp.loc[brownfield_exist.index, f"{prefix}_nom"] += brownfield_exist[f"{prefix}_nom"]
 
         # add previous solution to network
-        getattr(network, component).loc[comp.index + f"-{previous_year}"] = comp
+        network.add(component, comp.index, **comp)
 
         # fix missing time dependent profiles
         # now add the dynamic attributes not carried over by n.add (per unit avail etc)
@@ -192,7 +205,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "update_brownfield_with_solved",
             co2_pathway="exp175default",
-            planning_horizons="2025",
+            planning_horizons="2030",
             topology="current+FCG",
             heating_demand="positive",
             configfiles="config/myopic.yml",
@@ -209,6 +222,7 @@ if __name__ == "__main__":
         prev_year = _find_last_year(yr, years)
         prev_solution = pypsa.Network(snakemake.input.solved_network)
         min_capacity = config["existing_capacities"]["threshold_capacity"]
+        min_capacity = 0
 
         remove_end_of_life(prev_solution, yr)
 
