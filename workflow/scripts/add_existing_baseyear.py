@@ -182,6 +182,7 @@ def add_power_capacities_installed_before_baseyear(
         "ground heat pump": "heat pump",
         "air heat pump": "heat pump",
         "nuclear": "nuclear",
+        "PHS": "PHS",
     }
     costs_map = {
         "coal power plant": "coal",
@@ -232,24 +233,22 @@ def add_power_capacities_installed_before_baseyear(
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
         if not carrier_map.get(generator, "missing") in defined_carriers:
             logger.warning(
-                f"Carrier {carrier_map.get(generator, None)} for {generator} not defined in network - added anyway"
+                f"Carrier {carrier_map.get(generator, None)} for {generator} not defined in network"
+                "Consider adding to the CARRIER_MAP"
             )
         elif costs_map.get(generator) is None:
             raise ValueError(f"{generator} not defined in technoecon map - check costs_map")
 
         # capacity is the capacity in MW at each node for this
-        capacity = df_.loc[grouping_year, generator]
+        capacity = df_.loc[grouping_year, generator, resource_grade]
         if capacity.values.max() == 0:
             continue
-        # fix index for network.add (merge grade to name)
-        capacity = capacity.unstack()
-        capacity = capacity[~capacity.isna()]
         capacity = capacity[capacity > config["existing_capacities"]["threshold_capacity"]].dropna()
-        buses = capacity.index.get_level_values(0)
-        capacity.index = (
-            capacity.index.get_level_values(0) + " " + capacity.index.get_level_values(1)
-        )
-        capacity.index = capacity.index.str.rstrip() + " " + costs_map[generator]
+        buses = capacity.index
+        # fix index for network.add (merge grade to name)
+        if resource_grade:
+            capacity.index += " " + resource_grade
+        capacity.index += " " + costs_map[generator]
 
         costs_key = costs_map[generator]
 
@@ -354,8 +353,8 @@ def add_power_capacities_installed_before_baseyear(
                 location=buses,
             )
 
-        elif generator == "CHP coal":
-            bus0 = buses + " coal"
+        elif generator in ["CHP coal", "coal CHP"]:
+            bus0 = buses + " coal fuel"
             # TODO soft-code efficiency !!
             hist_efficiency = 0.37
             n.add(
@@ -398,7 +397,7 @@ def add_power_capacities_installed_before_baseyear(
                 location=buses,
             )
 
-        elif generator == "CHP gas":
+        elif generator in ["CHP gas", "gas CHP"]:
             hist_efficiency = 0.37
             bus0 = buses + " gas"
             n.add(
@@ -522,7 +521,7 @@ def add_power_capacities_installed_before_baseyear(
 
         else:
             logger.warning(
-                f"Skipped existing capacitity for {generator}"
+                f"Skipped existing capacitity for '{generator}'"
                 + " - tech not implemented as existing capacity"
             )
 
