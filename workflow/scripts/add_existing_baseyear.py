@@ -736,26 +736,29 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
         location=coal_brownfield.bus.values,
     )
 
-    coal_CHP_brownfield = n.links.query("carrier == 'CHP coal' & p_nom !=0")
+    coal_CHP_brownfield = n.links.query(
+        "carrier == 'CHP coal' & p_nom !=0 & not index.str.contains('boiler')"
+    )
     # make the coal brownfield extendable (constrain in solve constraints)
     n.links.loc[coal_CHP_brownfield.index, "p_nom_extendable"] = True
     n.links.loc[coal_CHP_brownfield.index, "p_nom_min"] = 0
 
     chp_nodes = coal_CHP_brownfield.bus1
-    ccs_fuel_bus = chp_nodes + "coal fuel ccs"
+    coal_fuel_bus = coal_CHP_brownfield.bus0.unique()
     n.add(
         "Bus",
-        ccs_fuel_bus,
-        x=chp_nodes.map(n.buses.x),
-        y=chp_nodes.map(n.buses.y),
+        coal_fuel_bus,
+        suffix=" ccs",
+        x=n.buses.loc[coal_fuel_bus].x,
+        y=n.buses.loc[coal_fuel_bus].y,
         carrier="coal ccs",
-        location=chp_nodes.map(n.buses.location),
+        location=n.buses.loc[coal_fuel_bus].location,
     )
 
     n.add(
         "Generator",
-        ccs_fuel_bus,
-        bus=ccs_fuel_bus,
+        coal_fuel_bus + " ccs",
+        bus=coal_fuel_bus + " ccs",
         carrier="coal ccs",
         p_nom_extendable=False,
         p_nom=1e8,
@@ -764,8 +767,9 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
 
     n.add(
         "Link",
-        name=coal_CHP_brownfield.index + "-ccs retrofit",
-        bus0=ccs_fuel_bus,
+        name=coal_CHP_brownfield.index,
+        suffix="-ccs retrofit",
+        bus0=coal_CHP_brownfield.bus0 + " ccs",
         bus1=chp_nodes,
         p_nom_extendable=True,
         p_nom_max=coal_CHP_brownfield.p_nom.values,
@@ -786,13 +790,15 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
     )
 
     boiler_brownfield = n.links.query(
-        "carrier == 'coal boiler central' and p_nom_extendable == False"
+        "carrier == 'CHP coal' & p_nom !=0 & index.str.contains('boiler')"
     )
+
     n.add(
         "Link",
-        boiler_brownfield.index + "-ccs retrofit",
-        bus0=ccs_fuel_bus,
-        bus1=chp_nodes + " central heat",
+        boiler_brownfield.index,
+        suffix="-ccs retrofit",
+        bus0=boiler_brownfield.bus0 + " ccs",
+        bus1=boiler_brownfield.bus1,
         carrier="CHP coal CCS",
         p_nom_extendable=True,
         marginal_cost=costs.at["central coal CHP", "efficiency"]
@@ -800,7 +806,7 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
         efficiency=costs.at["central coal CHP", "efficiency"] / costs.at["central coal CHP", "c_v"],
         build_year=coal_CHP_brownfield.build_year.values,
         lifetime=costs.at["central coal CHP", "lifetime"],
-        location=chp_nodes,
+        location=boiler_brownfield.bus1.map(n.buses.location),
     )
 
 
