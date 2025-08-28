@@ -286,14 +286,23 @@ def add_chp_constraints(n: pypsa.Network):
     Args:
         n (pypsa.Network): the pypsa network object to which's model the constraints are added
     """
-    electric = n.links.index.str.contains("CHP") & n.links.index.str.contains("generator")
-    heat = n.links.index.str.contains("CHP") & n.links.index.str.contains("boiler")
+    electric = n.links.query("carrier.str.contains('CHP') & bus1.map(@n.buses.carrier)=='AC'")
+    heat = n.links.query("carrier.str.contains('CHP') & bus1.map(@n.buses.carrier)=='heat'")
+    # not all CHP are implemented as generator + boiler
+    irrelevant = (
+        electric[["bus0", "bus1", "build_year"]]
+        .reset_index()
+        .merge(heat[["bus0", "bus1", "build_year"]], on=["bus0", "build_year"], how="left")
+        .query("bus1_y.isna()")
+        .Link
+    )
+    electric.drop(irrelevant.values, inplace=True)
 
-    electric_ext = n.links[electric].query("p_nom_extendable").index
-    heat_ext = n.links[heat].query("p_nom_extendable").index
+    electric_ext = electric.query("p_nom_extendable").index
+    heat_ext = heat.query("p_nom_extendable").index
 
-    electric_fix = n.links[electric].query("~p_nom_extendable").index
-    heat_fix = n.links[heat].query("~p_nom_extendable").index
+    electric_fix = electric.query("~p_nom_extendable").index
+    heat_fix = heat.query("~p_nom_extendable").index
 
     p = n.model["Link-p"]  # dimension: [time, link]
 
@@ -319,11 +328,12 @@ def add_chp_constraints(n: pypsa.Network):
         n.model.add_constraints(lhs <= rhs, name="chplink-top_iso_fuel_line_fix")
 
     # back-pressure
-    if not n.links[electric].index.empty:
+    if not electric.empty:
         lhs = (
-            p.loc[:, heat] * (n.links.efficiency[heat] * n.links.c_b[electric].values)
-            - p.loc[:, electric] * n.links.efficiency[electric]
+            p.loc[:, heat.index] * (heat["efficiency"] * electric.c_b.values)
+            - p.loc[:, electric.index] * electric["efficiency"]
         )
+
         n.model.add_constraints(lhs <= 0, name="chplink-backpressure")
 
 
@@ -490,56 +500,7 @@ def add_remind_paid_off_constraints(n: pypsa.Network) -> None:
             )
 
 
-def add_retrofit_constraints(n):
-    """
-    Add constraints to ensure retrofit capacity is linked to the original capacity
-    Args:
-        n (pypsa.Network): the pypsa network object to which's model the constraints are added
-    """
-    query = "carrier == 'coal' and p_nom !=0 and not index.str.contains('fuel')"
-    retrofit_q = "carrier=='coal ccs' and index.str.contains('retrofit') and not index.str.contains('fuel') and p_nom ==0"
-
-    retrofittable = n.generators.query(query).sort_values(["bus", "build_year"])
-    retrofit = n.generators.query(retrofit_q).sort_values(["bus", "build_year"])
-
-    gens = pd.concat([retrofittable, retrofit]).rename_axis(index="Generator-ext")
-    grouper = pd.concat([gens.bus, gens.build_year], axis=1)
-    p_nom = n.model["Generator-p_nom"].loc[gens.index]
-
-    lhs = p_nom.groupby(grouper).sum()
-
-    retrofit_potential = retrofittable.groupby(["bus", "build_year"]).p_nom_max.sum()
-    rhs = xr.DataArray(retrofit_potential.rename("Generator-ext")).rename(dim_0="group")
-    # arrange lhs style
-    rhs = rhs.loc[lhs.indexes["group"]]
-    if not lhs.empty:
-        n.model.add_constraints(lhs <= rhs, name="Generator-coal-retrofit")
-
-    # do the same for CHP
-    query = "carrier == 'CHP coal' and p_nom !=0 and not index.str.contains('fuel')"
-    retrofitted_q = "carrier=='CHP coal CCS' and index.str.contains('retrofit') and p_nom ==0"
-    chp_retrofittable = n.links.query(query).sort_values(["bus1", "build_year"])
-    chp_retrofit = n.links.query(retrofitted_q).sort_values(["bus1", "build_year"])
-    chp_retrofit_potential = chp_retrofittable.p_nom_max
-
-    if (
-        not chp_retrofittable.groupby(["bus1", "build_year"]).ngroups
-        == chp_retrofit.groupby(["bus1", "build_year"]).ngroups
-    ):
-        raise ValueError(
-            "Not all coal power plants can be retrofitted which will lead to issues."
-            "If you do not want retrofits for a year/region, set p_nom_max = 0 for it "
-        )
-
-    lhs = (
-        n.model["Link-p_nom"].loc[chp_retrofittable.index]
-        + n.model["Link-p_nom"].loc[chp_retrofit.index]
-    )
-    if not lhs.empty:
-        n.model.add_constraints(lhs <= chp_retrofit_potential, name="Link-CHP-coal-retrofit")
-
-
-def add_retrofit_constraints2(n: pypsa.Network):
+def add_retrofit_constraints(n: pypsa.Network):
     """
     Add CHP coal and coal power retrofit constraints to ensure retrofit capacity is linked to
      the original capacity
@@ -549,35 +510,38 @@ def add_retrofit_constraints2(n: pypsa.Network):
     methods = {
         "generators": {
             "query": "carrier == 'coal' and p_nom !=0 and not index.str.contains('fuel')",
-            "retrofit_query": "carrier=='coal ccs' and index.str.contains('retrofit') and not index.str.contains('fuel') and p_nom ==0",
+            "retrofit_query": "carrier=='coal ccs' & index.str.contains('retrofit') & not index.str.contains('fuel') & p_nom==0",
             "groupby": ["bus", "build_year"],
             "linopy_name": "Generator",
         },
         "links": {
             "query": "carrier == 'CHP coal' and p_nom !=0 and not index.str.contains('fuel')",
-            "retrofit_query": "carrier=='CHP coal CCS' and index.str.contains('retrofit') and p_nom ==0",
+            "retrofit_query": "carrier=='CHP coal CCS' & index.str.contains('retrofit') & p_nom==0",
             "groupby": ["bus1", "build_year"],
             "linopy_name": "Link",
         },
     }
+    # add constraints for links (CHP) & generators (power)
     for component in methods:
         comp = getattr(n, component)
         query = methods[component]["query"]
         retrofit_q = methods[component]["retrofit_query"]
 
         retrofittable = comp.query(query)
-        retrofit = comp.query(retrofit_q)
+        retrofits = comp.query(retrofit_q)
 
+        # group by bus and build year
         name = methods[component]["linopy_name"]
-        plants = pd.concat([retrofittable, retrofit]).rename_axis(index=f"{name}-ext")
-        grouper = pd.concat([plants.bus, plants.build_year], axis=1)
+        plants = pd.concat([retrofittable, retrofits]).rename_axis(index=f"{name}-ext")
+        # generalised version of pd.concat([plants.bus, plants.build_year], axis=1)
+        grouper = pd.concat([plants[x] for x in methods[component]["groupby"]], axis=1)
         p_nom = n.model[f"{name}-p_nom"].loc[plants.index]
 
         lhs = p_nom.groupby(grouper).sum()
 
         retrofit_potential = retrofittable.groupby(methods[component]["groupby"]).p_nom_max.sum()
         rhs = xr.DataArray(retrofit_potential.rename(f"{name}-ext")).rename(dim_0="group")
-        # arrange lhs style
+        # arrange lhs style so that limits match the group
         rhs = rhs.loc[lhs.indexes["group"]]
         if not lhs.empty:
             n.model.add_constraints(lhs <= rhs, name=f"{name}-coal-retrofit")
