@@ -22,7 +22,6 @@ from _helpers import configure_logging, mock_snakemake
 from constants import YEAR_HRS
 from add_electricity import load_costs
 from add_existing_baseyear import (
-    add_coal_retrofit,
     add_existing_vre_capacities,
     add_power_capacities_installed_before_baseyear,
     filter_capacities,

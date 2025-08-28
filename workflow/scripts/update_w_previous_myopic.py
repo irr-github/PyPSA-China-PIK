@@ -101,6 +101,7 @@ def add_previous_optima(
         comp[f"{prefix}_nom"] = comp[f"{prefix}_nom_opt"]
         comp[f"{prefix}_nom_extendable"] = False
         comp["build_year"] = previous_year
+        comp["capital_cost"] = 0  # paid-off
 
         # correct technical potentials (subtract brownfield from avail)
         new_max = comp[f"{prefix}_nom_max"] - comp[f"{prefix}_nom_opt"]
@@ -191,7 +192,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "update_brownfield_with_solved",
             co2_pathway="exp175default",
-            planning_horizons="2030",
+            planning_horizons="2025",
             topology="current+FCG",
             heating_demand="positive",
             configfiles="config/myopic.yml",
@@ -217,14 +218,14 @@ if __name__ == "__main__":
 
         remove_end_of_life(network, yr)
 
-        if config["Techs"].get("coal_ccs_retrofit", True):
-            correct_retrofitted_potentials(network)
+    if config["Techs"].get("coal_ccs_retrofit", True):
+        correct_retrofitted_potentials(network)
 
-            tech_costs = snakemake.input.tech_costs
-            n_years = network.snapshot_weightings.generators.sum() / YEAR_HRS
-            costs = load_costs(tech_costs, config["costs"], config["electricity"], yr, n_years)
+        tech_costs = snakemake.input.tech_costs
+        n_years = network.snapshot_weightings.generators.sum() / YEAR_HRS
+        costs = load_costs(tech_costs, config["costs"], config["electricity"], yr, n_years)
 
-            add_coal_retrofit(network, costs, yr, config)
+        add_coal_retrofit(network, costs, yr, config)
 
     compression = snakemake.config.get("io", None)
     if compression:

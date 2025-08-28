@@ -719,7 +719,8 @@ def add_coal_retrofit(n: pypsa.Network, costs: pd.DataFrame, plan_year: int, con
     # add retrofit
     n.add(
         "Generator",
-        name=coal_brownfield.index + "-ccs retrofit",
+        name=coal_brownfield.index,
+        suffix="-ccs retrofit",
         bus=coal_brownfield.bus.values,
         carrier="coal ccs",
         p_nom_extendable=True,
