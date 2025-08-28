@@ -296,7 +296,7 @@ def add_chp_constraints(n: pypsa.Network):
         .query("bus1_y.isna()")
         .Link
     )
-    electric.drop(irrelevant.values, inplace=True)
+    electric = electric.drop(irrelevant.values)
 
     electric_ext = electric.query("p_nom_extendable").index
     heat_ext = heat.query("p_nom_extendable").index
@@ -745,13 +745,13 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "solve_networks",
-            # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            co2_pathway="exp175default",
+            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            # co2_pathway="exp175default",
             planning_horizons="2025",
             topology="current+FCG",
             heating_demand="positive",
-            # configfiles="resources/tmp/pseudo_coupled.yml",
-            configfiles="config/myopic.yml",
+            configfiles="resources/tmp/pseudo_coupled.yml",
+            # configfiles="config/myopic.yml",
         )
     configure_logging(snakemake)
 
