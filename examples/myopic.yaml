@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: : 2025 The PyPSA-China Authors
+# 
+# SPDX-License-Identifier: CC0-1.0
+
+# A simplified example to highlight running myopic pathways with 
+#  an exponentially decreasing CO2 budget and heat coupling
+# Timespan is set to one week to speed up solving
+
+run:
+  name: "myopic_example"
+foresight: "myopic"
+
+scenario: 
+  co2_pathway: ["exp175default"] # co2_scenarios that will be used
+  topology: "current+FCG" # "current" or "FCG" or "current+FCG" or "current+Neighbor"
+  planning_horizons:
+    - 2025
+    - 2030
+    - 2035
+  heating_demand: ["positive"]
+
+co2_scenarios: 
+  exp175default:
+    control: "price" # price | reduction | budget | None
+    pathway:
+      '2020': 0.0
+      '2025': 0.22623418
+      '2030': 0.41175086
+      '2035': 0.56387834
+      '2040': 0.688626
+      '2045': 0.79092165
+      '2050': 0.87480618
+      '2055': 0.94359322
+      '2060': 1
+# TODO Need to test timezones and functionality of end_year_plus1
+snapshots:
+  start: "01-01 00:00"
+  end: "01-08 23:00"
+  bounds: 'both'
+  freq: '5h'
+  # for weighings -> to be improved
+  frequency: 5.
+  # in case snapshots cross the planning horizon year
+  end_year_plus1: false
+
+
+heat_demand:
+  start_day : "01-04" # dd-mm
+  end_day : "30-09" # dd-mm
+  heating_start_temp : 15.0  # c
+  heating_lin_slope : 1  # slope
+  heating_offet : 0  # linear model offset
+solar_thermal_angle: 45
+
+bus_suffix: [""," central heat"," decentral heat"," gas"," coal"]
+bus_carrier: {
+    "": "AC",
+    " central heat": "heat",
+    " decentral heat": "heat",
+    " gas": "gas",
+    " coal": "coal",
+}
+
+Techs:
+  ## for add carriers and generators - but ugly to have nuclear and biomass and heatpupm in vre
+  vre_techs: [ "onwind","offwind","solar","solar thermal","hydroelectricity", "nuclear","biomass","beccs","heat pump","resistive heater","Sabatier","H2 CHP", "fuel cell"]
+  conv_techs: ["OCGT", "CCGT", "CHP gas", "gas boiler","coal boiler","coal power plant","CHP coal"]
+  store_techs: ["H2","battery","water tanks","PHS"]
+  # non_dispatchable: ['Offshore Wind', 'Onshore Wind', 'Solar', 'Solar Residential', "Solar Thermal"]
+  non_dispatchable: ["onwind", "offwind", "solar", "solar thermal"]
+  hydrogen_lines: true
+  coal_ccs_retrofit: true # currently myopic pathway only. for CHP & el power
+
+## add components (overwrites vre tech choice)
+heat_coupling: True
+add_biomass: True
+add_hydro: True
+add_H2: True
+add_methanation: True
+line_losses: True
+no_lines: False
+
+existing_capacities:
+  add: True # whether to add brownfield capacities
+  grouping_years: [1985, 1990, 1995, 2000, 2005, 2010, 2015, 2019, 2020, 2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060]
+  collapse_years: False # Treat as a single unit when preparing & solving network 
+  threshold_capacity: 1 # TODO UNIT
+  techs: ['coal','CHP coal', 'CHP gas', 'OCGT', 'CCGT', 'solar', 'onwind', 'offwind', 'nuclear', "PHS", 'CHP biomass', 'biomass',]
+  node_assignment: simple # simple | gps
