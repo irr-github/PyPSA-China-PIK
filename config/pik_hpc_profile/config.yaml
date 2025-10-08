@@ -54,7 +54,7 @@ default-resources:
 
 set-resources:
   solve_networks:
-    mem_mb: 90000
+    mem_mb: 80000
     time : 80
     threads: 6
   build_cutout:
