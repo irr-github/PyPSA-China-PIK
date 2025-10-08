@@ -1129,7 +1129,7 @@ def add_heat_coupling(
             heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
             lifetime=costs.at["central coal CHP", "lifetime"],
             carrier="CHP coal",
-            location=nodes,
+            location=nodes[nodes != "Beijing"],
         )
 
         network.add(
@@ -1147,7 +1147,7 @@ def add_heat_coupling(
             efficiency=config["chp_parameters"]["coal"]["total_eff"],
             lifetime=costs.at["central coal CHP", "lifetime"],
             heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
-            location=nodes,
+            location=nodes[nodes != "Beijing"],
         )
 
     if "coal boiler" in config["Techs"]["conv_techs"]:
@@ -1162,13 +1162,14 @@ def add_heat_coupling(
                 "Link",
                 nodes[nodes != "Beijing"] + f" {cat} coal boiler",
                 p_nom_extendable=True,
-                bus0=nodes + " coal fuel",
-                bus1=nodes + f" {cat} heat",
+                bus0=nodes[nodes != "Beijing"] + " coal fuel",
+                bus1=nodes[nodes != "Beijing"] + f" {cat} heat",
                 efficiency=eff,
                 marginal_cost=eff * costs.at[f"{cat} coal boiler", "VOM"],
                 capital_cost=eff * costs.at[f"{cat} coal boiler", "capital_cost"],
                 lifetime=costs.at[f"{cat} coal boiler", "lifetime"],
                 carrier=f"coal boiler {cat}",
+                location=nodes[nodes != "Beijing"],
             )
 
     if "gas boiler" in config["Techs"]["conv_techs"]:
@@ -1185,6 +1186,7 @@ def add_heat_coupling(
                 * costs.at[f"{cat} gas boiler", "capital_cost"],
                 lifetime=costs.at[f"{cat} gas boiler", "lifetime"],
                 carrier=f"gas boiler {cat}",
+                location=nodes,
             )
 
     if "solar thermal" in config["Techs"]["vre_techs"]:
