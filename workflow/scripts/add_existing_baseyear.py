@@ -1,23 +1,24 @@
+# coding: utf-8
 """
 Functions to add brownfield capacities to the network for a reference year
 - adds VREs per grade and corrects technical potential. Best available grade is chosen
 """
-
 # SPDX-FileCopyrightText: : 2025 The PyPSA-China-PIK Authors
 #
 # SPDX-License-Identifier: MIT
 
 import logging
-import re
-from types import SimpleNamespace
-
 import numpy as np
 import pandas as pd
 import pypsa
-from _helpers import configure_logging, mock_snakemake
-from _pypsa_helpers import shift_profile_to_planning_year
-from add_electricity import load_costs
+
+import re
+from types import SimpleNamespace
+
 from constants import YEAR_HRS
+from add_electricity import load_costs
+from _helpers import mock_snakemake, configure_logging, ConfigManager
+from _pypsa_helpers import shift_profile_to_planning_year
 
 # TODO possibly reimplement to have env separation
 from rpycpl.technoecon_etl import to_list
@@ -28,7 +29,7 @@ spatial = SimpleNamespace()
 
 
 def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series) -> pd.DataFrame:
-    """Distribute vre capacities by grade potential, use up better grades first
+    """distribute vre capacities by grade potential, use up better grades first
 
     Args:
         cap_by_year (pd.Series): the vre tech potential p_nom_max added per year
@@ -108,6 +109,7 @@ def add_existing_vre_capacities(
     df_agg = pd.DataFrame()
 
     for carrier in tech_map:
+
         df = vre_df[vre_df.Tech == carrier].drop(columns=["Tech"])
         df.set_index("bus", inplace=True)
         df.columns = df.columns.astype(int)
@@ -154,6 +156,7 @@ def add_power_capacities_installed_before_baseyear(
     costs: pd.DataFrame,
     config: dict,
     installed_capacities: pd.DataFrame,
+    eff_penalty_hist=0.0,
 ):
     """
     Add existing power capacities to the network.
@@ -164,6 +167,7 @@ def add_power_capacities_installed_before_baseyear(
         costs (pd.DataFrame): techno-economic data
         config (dict): configuration dictionary
         installed_capacities (pd.DataFrame): installed capacities in MW
+        eff_penalty_hist (float): efficiency penalty for historical plants (1-x)*current
     """
 
     logger.info("adding power capacities installed before baseyear")
@@ -243,7 +247,7 @@ def add_power_capacities_installed_before_baseyear(
         build_year = 0 if grouping_year == "brownfield" else grouping_year
 
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
-        if carrier_map.get(generator, "missing") not in defined_carriers:
+        if not carrier_map.get(generator, "missing") in defined_carriers:
             logger.warning(
                 f"Carrier {carrier_map.get(generator, None)} for {generator} not defined in network"
                 "Consider adding to the CARRIER_MAP"
@@ -298,7 +302,7 @@ def add_power_capacities_installed_before_baseyear(
                 p_max_pu=config["nuclear_reactors"]["p_max_pu"] if generator == "nuclear" else 1,
                 p_min_pu=config["nuclear_reactors"]["p_min_pu"] if generator == "nuclear" else 0,
                 marginal_cost=costs.at[costs_key, "marginal_cost"],
-                efficiency=costs.at[costs_key, "efficiency"],
+                efficiency=costs.at[costs_key, "efficiency"] * (1 - eff_penalty_hist),
                 build_year=build_year,
                 lifetime=costs.at[costs_key, "lifetime"],
                 location=buses,
@@ -331,7 +335,7 @@ def add_power_capacities_installed_before_baseyear(
                 p_nom_min=capacity / costs.at[costs_key, "efficiency"],
                 p_nom_max=capacity / costs.at[costs_key, "efficiency"],
                 p_nom_extendable=False,
-                efficiency=costs.at[costs_key, "efficiency"],
+                efficiency=costs.at[costs_key, "efficiency"] * (1 - eff_penalty_hist),
                 build_year=build_year,
                 lifetime=costs.at[costs_key, "lifetime"],
                 location=buses,
@@ -367,28 +371,27 @@ def add_power_capacities_installed_before_baseyear(
 
         elif generator in ["CHP coal", "coal CHP"]:
             bus0 = buses + " coal fuel"
-            # TODO soft-code efficiency !!
-            hist_efficiency = 0.37
             n.add(
                 "Link",
                 capacity.index,
-                suffix=f"-{str(grouping_year)}",
+                suffix=f" generator-{str(grouping_year)}",
                 bus0=bus0,
                 bus1=buses,
                 carrier=carrier_map[generator],
-                marginal_cost=hist_efficiency
+                marginal_cost=costs.at["central coal CHP", "efficiency"]
                 * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-                p_nom=capacity / hist_efficiency,
-                p_nom_min=capacity / hist_efficiency,
-                p_nom_max=capacity / hist_efficiency,
+                p_nom=capacity / costs.at["central coal CHP", "efficiency"],
+                p_nom_min=capacity / costs.at["central coal CHP", "efficiency"],
+                p_nom_max=capacity / costs.at["central coal CHP", "efficiency"],
                 p_nom_extendable=False,
-                efficiency=hist_efficiency,
-                p_nom_ratio=1.0,
-                c_b=0.75,
+                efficiency=costs.at["central coal CHP", "efficiency"] * (1 - eff_penalty_hist),
+                heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
                 build_year=build_year,
                 lifetime=costs.at["central coal CHP", "lifetime"],
                 location=buses,
             )
+            # simplified treatment based on a decrease with c_v and a max htpwr ratio
+            htpr = config["chp_parameters"]["coal"]["heat_to_power"]
 
             n.add(
                 "Link",
@@ -397,42 +400,46 @@ def add_power_capacities_installed_before_baseyear(
                 bus0=bus0,
                 bus1=buses + " central heat",
                 carrier=carrier_map[generator],
-                marginal_cost=hist_efficiency
+                marginal_cost=costs.at["central coal CHP", "efficiency"]
                 * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-                p_nom=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
-                p_nom_min=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
-                p_nom_max=capacity / hist_efficiency * costs.at["central coal CHP", "c_v"],
+                # p_max will be constrained by chp constraints
+                p_nom=capacity * htpr,
+                p_nom_min=capacity * htpr,
+                p_nom_max=capacity * htpr,
                 p_nom_extendable=False,
-                efficiency=hist_efficiency / costs.at["central coal CHP", "c_v"],
+                # total eff will be fixed by CHP constraints
+                efficiency=config["chp_parameters"]["coal"]["total_eff"],
                 build_year=build_year,
                 lifetime=costs.at["central coal CHP", "lifetime"],
                 location=buses,
             )
 
         elif generator in ["CHP gas", "gas CHP"]:
-            hist_efficiency = 0.37
             bus0 = buses + " gas"
             n.add(
                 "Link",
                 capacity.index,
-                suffix=f"-{str(grouping_year)}",
+                suffix=f" generator-{str(grouping_year)}",
                 bus0=bus0,
                 bus1=buses,
                 carrier=carrier_map[generator],
-                marginal_cost=hist_efficiency
-                * costs.at["central gas CHP", "VOM"],  # NB: VOM is per MWel
-                capital_cost=hist_efficiency
-                * costs.at["central gas CHP", "capital_cost"],  # NB: fixed cost is per MWel,
-                p_nom=capacity / hist_efficiency,
-                p_nom_min=capacity / hist_efficiency,
+                marginal_cost=costs.at["central gas CHP CC", "efficiency"]
+                * costs.at["central gas CHP CC", "VOM"],  # NB: VOM is per MWel
+                capital_cost=costs.at["central gas CHP CC", "efficiency"]
+                * costs.at["central gas CHP CC", "capital_cost"],  # NB: fixed cost is per MWel,
+                p_nom=capacity / costs.at["central gas CHP CC", "efficiency"],
+                p_nom_min=capacity / costs.at["central gas CHP CC", "efficiency"],
                 p_nom_extendable=False,
-                efficiency=hist_efficiency,
-                p_nom_ratio=1.0,
-                c_b=costs.at["central gas CHP", "c_b"],
+                efficiency=costs.at["central gas CHP CC", "efficiency"] * (1 - eff_penalty_hist),
+                heat_to_power=config["chp_parameters"]["gas"]["heat_to_power"],
+                c_b=costs.at["central gas CHP CC", "c_b"],
                 build_year=build_year,
-                lifetime=costs.at["central gas CHP", "lifetime"],
+                lifetime=costs.at["central gas CHP CC", "lifetime"],
                 location=buses,
             )
+            # simplified treatment based on a decrease with c_v and a max htpwr ratio
+            htpr = config["chp_parameters"]["gas"]["heat_to_power"]
+
             n.add(
                 "Link",
                 capacity.index,
@@ -440,15 +447,17 @@ def add_power_capacities_installed_before_baseyear(
                 bus0=bus0,
                 bus1=buses + " central heat",
                 carrier=carrier_map[generator],
-                marginal_cost=hist_efficiency
-                * costs.at["central gas CHP", "VOM"],  # NB: VOM is per MWel
-                p_nom=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
-                p_nom_min=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
-                p_nom_max=capacity / hist_efficiency * costs.at["central gas CHP", "c_v"],
+                marginal_cost=costs.at["central gas CHP CC", "efficiency"]
+                * costs.at["central gas CHP CC", "VOM"],  # NB: VOM is per MWel
+                # pmax will be constrained by chp constraints
+                p_nom=capacity * htpr,
+                p_nom_min=capacity * htpr,
+                p_nom_max=capacity * htpr,
                 p_nom_extendable=False,
-                efficiency=hist_efficiency / costs.at["central gas CHP", "c_v"],
+                # will be constrained by chp constraints
+                efficiency=config["chp_parameters"]["gas"]["total_eff"],
                 build_year=build_year,
-                lifetime=costs.at["central gas CHP", "lifetime"],
+                lifetime=costs.at["central gas CHP CC", "lifetime"],
                 location=buses,
             )
 
@@ -592,8 +601,7 @@ def add_paid_off_capacity(
         paid_off_caps (pd.DataFrame): DataFrame with paid off capacities & columns
             [tech_group, Capacity, techs]
         costs (pd.DataFrame): techno-economic data for the technologies
-        cutoff (int, optional): minimum capacity to be considered. Defaults to 100 MW.
-    """
+        cutoff (int, optional): minimum capacity to be considered. Defaults to 100 MW."""
 
     paid_off = paid_off_caps.reset_index()
 
@@ -828,10 +836,9 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "add_existing_baseyear",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
             planning_horizons="2030",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            # configfiles="resources/tmp/pseudo_coupled.yml",
             heating_demand="positive",
         )
 
@@ -859,6 +866,9 @@ if __name__ == "__main__":
     costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
 
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)
+    # Existing capacities is multi-year frame in remind coupled mode
+    if config["run"].get("is_remind_coupled", False) or "year" in existing_capacities.columns:
+        existing_capacities = existing_capacities.query("remind_year == @cost_year")
     existing_capacities = filter_capacities(existing_capacities, cost_year)
 
     vre_caps = existing_capacities.query("Tech in @vre_techs | Fueltype in @vre_techs")

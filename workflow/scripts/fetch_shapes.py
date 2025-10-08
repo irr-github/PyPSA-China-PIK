@@ -42,7 +42,7 @@ def fetch_natural_earth_shape(
 
     Example:
         china country: build_natural_earth_shape("admin_0_countries", "ADMIN", "China")
-        china provinces: build_natural_earth_shape("admin_1_states_provinces", 
+        china provinces: build_natural_earth_shape("admin_1_states_provinces",
             "iso_a2", "CN", region_key="name_en")
 
     Returns:
@@ -144,7 +144,7 @@ def fetch_gadm(country_code="CHN", level=2):
         shp_dir = "resources/data/province_shapes"
         z.extractall(shp_dir)
         gdf = gpd.read_file(f"{shp_dir}/{level_filename}")
-    
+
     return gdf
 
 
@@ -212,41 +212,6 @@ def fetch_maritime_eez(zone_name: str) -> gpd.GeoDataFrame:
     eez = gpd.GeoDataFrame.from_features(data["features"])
     return eez.set_crs(epsg=crs)
 
-  
-def fetch_gadm(country_code="CHN", level=2):
-    """
-    fetch GADM shapefile for a given country and administrative level.
-    https://gadm.org/download_country.html
-
-    Parameters:
-        country_code (str): ISO3 country code (e.g., 'CHN', 'USA').
-        level (int): Administrative level (0=country, 1=region, etc.).
-
-    Returns:
-        geopandas.GeoDataFrame: Loaded shapefile as GeoDataFrame.
-    """
-    # Construct the URL
-    url = f"https://geodata.ucdavis.edu/gadm/gadm4.1/shp/gadm41_{country_code}_shp.zip"
-
-    # Download the zip file
-    response = requests.get(url)
-    if response.status_code != 200:
-        raise ValueError(
-            f"Failed to download data for {country_code} - Status code: {response.status_code}"
-        )
-
-    # Extract the zip file in memory
-    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-        # Filter to the desired level shapefile
-        level_filename = f"gadm41_{country_code}_{level}.shp"
-        if level_filename not in z.namelist():
-            raise ValueError(f"Level {level} shapefile not found for {country_code}.")
-
-        shp_dir = "resources/data/province_shapes"
-        z.extractall(shp_dir)
-        gdf = gpd.read_file(f"{shp_dir}/{level_filename}")
-        return gdf
-
 
 def fetch_prefecture_shapes(
     fixes={
@@ -276,10 +241,10 @@ def build_nodes(
     prefectures: gpd.GeoDataFrame,
     nodes_cfg: dict,
 ) -> gpd.GeoSeries:
-    """ Build the nodes, either directly at provincial (admin1) level or from adminlvk2 subregions
-      
+    """Build the nodes, either directly at provincial (admin1) level or from adminlvk2 subregions
+
     Args:
-      prefectures:  """
+      prefectures:"""
     gdf = prefectures.copy()
     if nodes_cfg.get("split_provinces", False):
         validate_split_cfg(nodes_cfg["splits"], gdf)
@@ -291,7 +256,7 @@ def build_nodes(
 
 
 def validate_split_cfg(split_cfg: dict, gdf: gpd.GeoDataFrame):
-    """validate the province split configuration. 
+    """validate the province split configuration.
     The province (admin level 1) is split by admin level 2 {subregion: [prefecture names],..}.
     The prefecture names must be unique and cover all admin2 in the admin1 level.
 
@@ -306,12 +271,12 @@ def validate_split_cfg(split_cfg: dict, gdf: gpd.GeoDataFrame):
         if admin1 not in gdf[GDAM_LV1].unique():
             err_ = f"Invalid admin1 entry {admin1} not found in provinces {gdf[GDAM_LV1].unique()}"
             raise ValueError(err_)
-        
+
         # flatten values
         admin2 = []
         for names, v in split_cfg[admin1].items():
             admin2 += v
-        
+
         # check completeness
         all_admin2 = gdf.query(f'{GDAM_LV1} == "{admin1}"')[GDAM_LV2].unique().tolist()
         if not sorted(admin2) == sorted(all_admin2):
@@ -326,10 +291,7 @@ def validate_split_cfg(split_cfg: dict, gdf: gpd.GeoDataFrame):
 
 
 # TODO consider returning country and province
-def split_provinces(
-    prefectures: gpd.GeoDataFrame,
-    node_config: dict
-) -> gpd.GeoSeries:
+def split_provinces(prefectures: gpd.GeoDataFrame, node_config: dict) -> gpd.GeoSeries:
     """
     Split Inner Mongolia into East and West regions based on prefectures.
 
@@ -344,9 +306,9 @@ def split_provinces(
         mask = gdf.query(f"{GDAM_LV1} == '{admin1}'").index
         splits_inv = {vv: admin1 + "_" + k for k, v in splits.items() for vv in v}
         gdf.loc[mask, GDAM_LV1] = gdf.loc[mask, "NAME_2"].map(splits_inv)
-    
+
     # merge geometries by node
-    gdf.rename(columns = {GDAM_LV1: "node"}, inplace=True)
+    gdf.rename(columns={GDAM_LV1: "node"}, inplace=True)
     return gdf[["node", "geometry"]].dissolve(by="node", aggfunc="sum")
 
 
@@ -482,7 +444,10 @@ if __name__ == "__main__":
         logger.info("Splitting provinces into user defined nodes")
         prefectures = fetch_prefecture_shapes()
         nodes = build_nodes(prefectures, nodes_config)
-        nodes.simplify(tol["land"]).to_file(snakemake.output.province_shapes.replace(".geojson", "_nodestest.geojson"), driver="GeoJSON")
+        nodes.simplify(tol["land"]).to_file(
+            snakemake.output.province_shapes.replace(".geojson", "_nodestest.geojson"),
+            driver="GeoJSON",
+        )
 
         raise NotImplementedError(
             "Province splitting is not implemented accross the whole workflow yet."

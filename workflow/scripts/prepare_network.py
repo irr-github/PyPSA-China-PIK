@@ -295,7 +295,7 @@ def add_co2_capture_support(
         nodes + " CO2 capture",
         bus=nodes + " CO2 capture",
         e_nom_extendable=True,
-        carrier="CO2 capture",
+        carrier="CO2",
     )
 
 
@@ -405,7 +405,6 @@ def add_conventional_generators(
             p_nom_extendable=True,
             efficiency=costs.at["coal", "efficiency"],
             marginal_cost=costs.at["coal", "marginal_cost"],
-            # TODO CHECK THIS
             capital_cost=costs.at["coal", "capital_cost"],  # NB: capital cost is per MWel
             lifetime=costs.at["coal", "lifetime"],
             ramp_limit_up=ramps["ramp_limit_up"],
@@ -423,7 +422,6 @@ def add_conventional_generators(
                 p_nom_extendable=True,
                 efficiency=costs.at["coal ccs", "efficiency"],
                 marginal_cost=costs.at["coal ccs", "marginal_cost"],
-                # TODO CHECK THIS
                 capital_cost=costs.at["coal ccs", "capital_cost"],  # NB: capital cost is per MWel
                 lifetime=costs.at["coal ccs", "lifetime"],
                 p_max_pu=0.9,  # planned and forced outages
@@ -821,6 +819,8 @@ def add_heat_coupling(
         # TODO fix this if not working
         heat_demand.index = heat_demand.index.tz_localize(None)
         heat_demand = heat_demand.loc[network.snapshots]
+        hot_water_demand = store.get("hot_water_demand")
+        hot_water_demand = hot_water_demand.loc[network.snapshots]
 
     network.add(
         "Bus",
@@ -828,7 +828,7 @@ def add_heat_coupling(
         suffix=" decentral heat",
         x=prov_centroids.x,
         y=prov_centroids.y,
-        carrier="heat",
+        carrier="heat",  # "heat decentral",
         location=nodes,
     )
 
@@ -845,17 +845,30 @@ def add_heat_coupling(
     network.add(
         "Load",
         nodes,
+        carrier="heat",  # "heat decentral",
         suffix=" decentral heat",
         bus=nodes + " decentral heat",
-        p_set=heat_demand[nodes].multiply(1 - central_fraction[nodes]),
+        p_set=heat_demand[nodes].multiply(1 - central_fraction[nodes]) + hot_water_demand[nodes],
     )
 
     network.add(
         "Load",
         nodes,
+        carrier="heat",
         suffix=" central heat",
         bus=nodes + " central heat",
         p_set=heat_demand[nodes].multiply(central_fraction[nodes]),
+    )
+
+    # add Beijing Hebei central heat link
+    network.add(
+        "Link",
+        "Hebei-Beijing heat link",
+        bus0="Hebei central heat",
+        bus1="Beijing central heat",
+        carrier="heat",
+        efficiency=0.9,
+        p_nom_extendable=True,
     )
 
     if "heat pump" in config["Techs"]["vre_techs"]:
@@ -932,6 +945,7 @@ def add_heat_coupling(
                 bus1=nodes + cat + "water tanks",
                 carrier="water tanks",
                 efficiency=costs.at["water tank charger", "efficiency"],
+                capital_cost=0.1,
                 p_nom_extendable=True,
             )
 
@@ -942,6 +956,7 @@ def add_heat_coupling(
                 bus1=nodes + cat + "heat",
                 carrier="water tanks",
                 efficiency=costs.at["water tank discharger", "efficiency"],
+                capital_cost=0.1,
                 p_nom_extendable=True,
             )
             # [HP] 180 day time constant for centralised, 3 day for decentralised
@@ -980,6 +995,12 @@ def add_heat_coupling(
         and config["add_H2"]
         and config.get("heat_coupling", False)
     ):
+        # TODO make a CC extraction plant
+        # implemented for now with fixed heat to power ratio
+        # F*eta_tot = Qout + Pout = (1+htpr)*Pout = (1+1/htpr)*Qout
+        # eta_el = Pout/F = eta_tot/(1+htpr) etc
+        eta_tot_h2 = config["chp_parameters"]["OCGT"]["total_eff"]
+        htpr = config["chp_parameters"]["OCGT"]["heat_to_power"]
 
         network.add(
             "Link",
@@ -988,9 +1009,8 @@ def add_heat_coupling(
             bus1=nodes,
             bus2=nodes + " central heat",
             p_nom_extendable=True,
-            efficiency=costs.at["central hydrogen CHP", "efficiency"],
-            efficiency2=costs.at["central hydrogen CHP", "efficiency"]
-            / costs.at["central hydrogen CHP", "c_b"],
+            efficiency=eta_tot_h2 / (1 + htpr),
+            efficiency2=eta_tot_h2 / (1 + 1 / htpr),
             capital_cost=costs.at["central hydrogen CHP", "efficiency"]
             * costs.at["central hydrogen CHP", "capital_cost"],
             lifetime=costs.at["central hydrogen CHP", "lifetime"],
@@ -998,12 +1018,54 @@ def add_heat_coupling(
         )
 
     if "CHP gas" in config["Techs"]["conv_techs"]:
-        # TODO apply same as for coal (include Cb)
-        # OCGT CHP
+        # Extraction mode CCGT CHP -> heat to power ratio is maximum
         network.add(
             "Link",
             nodes,
-            suffix=" CHP gas",
+            suffix=" CHP gas generator",
+            bus0=nodes + " gas",
+            bus1=nodes,
+            bus2=nodes + " central heat",
+            p_nom_extendable=True,
+            marginal_cost=costs.at["central gas CHP CC", "efficiency"]
+            * costs.at["central gas CHP CC", "VOM"],  # NB: VOM is per MWel
+            capital_cost=costs.at["central gas CHP CC", "efficiency"]
+            * costs.at["central gas CHP CC", "capital_cost"],  # NB: capital cost is per MWel
+            efficiency=costs.at["central gas CHP CC", "efficiency"],
+            heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
+            lifetime=costs.at["central gas CHP CC", "lifetime"],
+            carrier="CHP gas",
+            location=nodes,
+        )
+
+        network.add(
+            "Link",
+            nodes,
+            suffix=" CHP gas boiler",
+            bus0=nodes + " gas",
+            bus1=nodes + " central heat",
+            carrier="CHP gas",
+            marginal_cost=costs.at["central gas CHP CC", "efficiency"]
+            * costs.at["central gas CHP CC", "VOM"],  # NB: VOM is per MWel
+            p_nom_extendable=True,
+            # total eff will be fixed by CHP constraints
+            efficiency=config["chp_parameters"]["gas"]["total_eff"],
+            lifetime=costs.at["central gas CHP CC", "lifetime"],
+            heat_to_power=config["chp_parameters"]["gas"]["heat_to_power"],
+            location=nodes,
+        )
+
+    if "CHP OCGT gas" in config["Techs"]["conv_techs"]:
+        # OCGT CHPs have fixed heat to power ratio
+        # F*eta_tot = Qout + Pout = (1+htpr)*Pout = (1+1/htpr)*Qout
+        # eta_el = Pout/F = eta_tot/(1+htpr) etc
+        eta_tot = config["chp_parameters"]["OCGT"]["total_eff"]
+        htpr = config["chp_parameters"]["OCGT"]["heat_to_power"]
+
+        network.add(
+            "Link",
+            nodes,
+            suffix=" CHP OCGT gas",
             bus0=nodes + " gas",
             bus1=nodes,
             bus2=nodes + " central heat",
@@ -1012,16 +1074,21 @@ def add_heat_coupling(
             * costs.at["central gas CHP", "VOM"],  # NB: VOM is per MWel
             capital_cost=costs.at["central gas CHP", "efficiency"]
             * costs.at["central gas CHP", "capital_cost"],  # NB: capital cost is per MWel
-            efficiency=costs.at["central gas CHP", "efficiency"],
-            efficiency2=config["chp_parameters"]["eff_th"],
+            efficiency=eta_tot / (1 + htpr),
+            efficiency2=eta_tot / (1 + 1 / htpr),
             lifetime=costs.at["central gas CHP", "lifetime"],
-            carrier="CHP gas",
+            carrier="CHP OCGT gas",
         )
 
     if "CHP coal" in config["Techs"]["conv_techs"]:
         # note don't have newbuild option for CHP coal w CCS
+        # TODO newbuild coal CCS? coal CCS retrofit?
 
         logger.info("Adding CHP coal to network")
+        # Extraction mode super critical CHP -> heat to power ratio is maximum
+        # in ideal model there would be plant level "commitment" of extraction mode
+        # to reflect that real plants have a min heat output in extraction mode
+        # however, over many plants can avoid this (remembering no heat in condensing mode)
 
         network.add(
             "Bus",
@@ -1045,7 +1112,7 @@ def add_heat_coupling(
 
         # TODO add district heat copper connect between Hebei and Beijing
         # TODO add pmaxpu from config and ramp
-        # NOTE generator | boiler is a key word for the constraint
+        # NOTE CHP + (generator | boiler) are key words for the constraint
         network.add(
             "Link",
             name=nodes[nodes != "Beijing"],
@@ -1058,11 +1125,10 @@ def add_heat_coupling(
             capital_cost=costs.at["central coal CHP", "efficiency"]
             * costs.at["central coal CHP", "capital_cost"],  # NB: capital cost is per MWel
             efficiency=costs.at["central coal CHP", "efficiency"],
-            # TODO CHECK this gives realistic power to heat ratios for china
-            c_b=costs.at["central coal CHP", "c_b"],
-            p_nom_ratio=1.0,
+            heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
             lifetime=costs.at["central coal CHP", "lifetime"],
             carrier="CHP coal",
+            location=nodes,
         )
 
         network.add(
@@ -1074,25 +1140,32 @@ def add_heat_coupling(
             carrier="CHP coal",
             p_nom_extendable=True,
             marginal_cost=costs.at["central coal CHP", "efficiency"]
-            * costs.at["central coal CHP", "VOM"],  # NB: VOM is per MWel
-            efficiency=costs.at["central coal CHP", "efficiency"]
-            / costs.at["central coal CHP", "c_v"],
+            * costs.at[
+                "central coal CHP", "VOM"
+            ],  # NB: VOM is per MWel            # total eff will be fixed by CHP constraints
+            efficiency=config["chp_parameters"]["coal"]["total_eff"],
             lifetime=costs.at["central coal CHP", "lifetime"],
+            heat_to_power=config["chp_parameters"]["coal"]["heat_to_power"],
+            location=nodes,
         )
 
     if "coal boiler" in config["Techs"]["conv_techs"]:
+        use_hist_eff = config["use_historical_efficiency"].get("coal_boiler", False)
         for cat in ["decentral", "central"]:
+            eff = (
+                costs.at[f"{cat} coal boiler", "hist_efficiency"]
+                if use_hist_eff
+                else costs.at[f"{cat} coal boiler", "efficiency"]
+            )
             network.add(
                 "Link",
                 nodes[nodes != "Beijing"] + f" {cat} coal boiler",
                 p_nom_extendable=True,
-                bus0=nodes[nodes != "Beijing"] + " coal fuel",
-                bus1=nodes[nodes != "Beijing"] + f" {cat} heat",
-                efficiency=costs.at[f"{cat} coal boiler", "efficiency"],
-                marginal_cost=costs.at[f"{cat} coal boiler", "efficiency"]
-                * costs.at[f"{cat} coal boiler", "VOM"],
-                capital_cost=costs.at[f"{cat} coal boiler", "efficiency"]
-                * costs.at[f"{cat} coal boiler", "capital_cost"],
+                bus0=nodes + " coal fuel",
+                bus1=nodes + f" {cat} heat",
+                efficiency=eff,
+                marginal_cost=eff * costs.at[f"{cat} coal boiler", "VOM"],
+                capital_cost=eff * costs.at[f"{cat} coal boiler", "capital_cost"],
                 lifetime=costs.at[f"{cat} coal boiler", "lifetime"],
                 carrier=f"coal boiler {cat}",
             )
@@ -1465,13 +1538,8 @@ def prepare_network(
         )
 
     if "PHS" in config["Techs"]["store_techs"]:
-        # TODO soft-code path
         # pure pumped hydro storage, fixed, 6h energy by default, no inflow
-        if config["hydro"]["hydro_capital_cost"]:
-            cc = costs.at["PHS", "capital_cost"]
-        else:
-            cc = 0.0
-
+        cc = costs.at["PHS", "capital_cost"]
         network.add(
             "StorageUnit",
             nodes,
