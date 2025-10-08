@@ -36,6 +36,7 @@ from constants import (
     PROV_NAMES,
 )
 from functions import haversine
+from readers import read_edges
 from readers_geospatial import read_province_shapes
 from shapely.geometry import Point
 
@@ -1615,11 +1616,11 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "prepare_networks",
             topology="current+FCG",
-            # co2_pathway="exp175default",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
+            # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
             planning_horizons=2030,
             heating_demand="positive",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            # configfiles="resources/tmp/pseudo_coupled.yml",
             # configfiles="config/myopic.yml",
         )
 

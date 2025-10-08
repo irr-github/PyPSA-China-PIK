@@ -418,7 +418,6 @@ rule dag:
         rules_pdf="results/dag/rules_graph.pdf",
         rules_svg="results/dag/rules_graph.svg",
         rules_png="results/dag/rules_graph.png",
-        rules_svg="results/dag/rules_graph.svg",
     conda:
         "envs/environment.yaml"
     shell:
