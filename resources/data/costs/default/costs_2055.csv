@@ -633,3 +633,4 @@ water tank discharger,2055,efficiency,0.84,per unit,"Danish Energy Agency, techn
 retrofit,2055,investment,180.0,USD/kW,"Fan J L, Xu M, Li F, et al. Carbon capture and storage (CCS) retrofit potential of coal-fired power plants in China: the technology lock-in and cost optimization perspective[J]. Applied energy, 2018, 229: 326-334.",
 retrofit,2055,lifetime,40.0,years,same as coal power plants,
 retrofit,2055,VOM,69.0,USD/tCO2,"Lockwood T. A compararitive review of next-generation carbon capture technologies for coal-fired power plant[J]. Energy procedia, 2017, 114: 2658-2670.",
+gas ccs,2055,CO2 intensity,0.025210327786829124,t_CO2/MWh_th,ngccc REMIND, 
