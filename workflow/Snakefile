@@ -286,10 +286,10 @@ rule prepare_baseyear_capacities:
 # make sure the params will appear in the profile names
 resource_class_cfg = {tech: config["renewable"][tech]["resource_classes"] for tech in config["renewable"]}
 rsc_params = {key : "_".join([f"{k}{v}" for k, v in resource_class_cfg[key].items()]) for key in resource_class_cfg}
+
+
 if config["foresight"] in ["overnight"]:
-
     add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
-
 
     rule prepare_networks:
         input:
