@@ -243,8 +243,8 @@ def add_power_capacities_installed_before_baseyear(
     # TODO do we really need to loop over the years? / so many things?
     # something like df_.unstack(level=0) would be more efficient
     for grouping_year, generator, resource_grade in df_.index:
-        build_year = -1 if grouping_year == "brownfield" else grouping_year
-        
+        build_year = 0 if grouping_year == "brownfield" else grouping_year
+
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
         if not carrier_map.get(generator, "missing") in defined_carriers:
             logger.warning(
