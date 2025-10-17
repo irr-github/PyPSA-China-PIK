@@ -18,6 +18,25 @@ rule fetch_region_shapes:
         "../scripts/fetch_shapes.py"
 
 
+name = "-".join([str(v) for v in config["world_population_raster"].values()])
+release_yr, rev, yr, v = (
+    config["world_population_raster"]["release_yr"],
+    config["world_population_raster"]["revision"],
+    config["world_population_raster"]["year"],
+    config["world_population_raster"]["version"],
+)
+
+rule fetch_gridded_population:
+    params:
+        config = config["world_population_raster"],
+        base_url = f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/"
+    output:
+        pop_raster= f"resources/data/population/china_world_pop_{name}.tif",
+    log:
+        LOGS_COMMON + "/fetch_gridded_population.log",
+    script:
+        "../scripts/fetch_gridded_population.py"
+
 # TODO build actual fetch rules with the sentinel/copernicus APIs.
 # TODO See if there are datasets succeeding the S2 LC100 cover to get newer data
 if config["enable"].get("retrieve_raster", True):
@@ -83,22 +102,3 @@ elif config["enable"].get("retrieve_cutout", False):
             os.makedirs(os.path.dirname(output.cutout), exist_ok=True)
             shutil.move(input.zenodo_cutout, output.cutout)
 
-            # import logging
-            # print("attempting")
-            # logging.info("hellp")
-            # logging.info(f"Unzipping {input[0]} to {output[0]}")
-
-            # import shutil
-            # import zipfile
-            # import os
-
-            # dirname = os.path.dirname(output[0])
-            # print(dirname, os.path.exists(dirname))
-
-            # # Move, unzip the file
-            # shutil.move(input[0], dirname + ".zip")
-            # logging.info(f"Unzipping {dirname}.zip to {dirname}")
-            # print()
-            # with zipfile.ZipFile(dirname + ".zip", 'r') as zip_ref:
-            #     zip_ref.extractall(os.path.dirname(dirname))
-            # os.remove(dirname + ".zip")
