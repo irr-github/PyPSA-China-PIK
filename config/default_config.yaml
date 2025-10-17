@@ -69,9 +69,9 @@ logging:
 
 enable:
   build_cutout: false
+  retrieve: true  
   retrieve_cutout: false
-  retrieve_raster: false
-
+  
 atlite:
   cutout_name: "China-2020c"
   freq: "h"
@@ -315,7 +315,7 @@ operational_reserve:
 # TODO integrate in workflow: split_provinces is currently not supported by build_loads and reporting
 nodes: 
   split_provinces: False # split (some) provinces (admin l1) using admin l2  (counties/prefectures)
-  # exclude currently only applies if split_provinces is True, will be fixed with integrartion to workflow
+  # exclude currently only applies if split_provinces is True, will be fixed with integration to workflow
   exclude_provinces: ["Macau", "HongKong"] # list of provinces to exclude from splitting
   splits:
     # adminl2 groups per adminl1. {adminl1: {custom_name: [adminl2_names],..}}
@@ -346,3 +346,9 @@ fetch_regions:
   simplify_tol: 
     eez: 0.5
     land: 0.05
+
+world_population_raster:
+  year: 2024
+  release_yr: 2024
+  version: 1
+  revision: "B"
