@@ -310,8 +310,6 @@ def _calculate_generation(
         comps=["Generator", "Link", "StorageUnit"],
         nice_names=use_nice_names,
     ).fillna(0)
-    time_start = "2035-01-01"
-    time_end = "2035-01-07"
 
     # Filter by time if specified
     if time_start is not None or time_end is not None:

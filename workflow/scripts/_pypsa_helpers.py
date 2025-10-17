@@ -243,6 +243,59 @@ def calculate_marginal_costs(n: pypsa.Network, location=None) -> tuple[pd.Series
     return (marginal_costs, marginal_links)
 
 
+def calculate_generation(
+    n: pypsa.Network, time_start=None, time_end=None, use_nice_names=False
+) -> pd.Series:
+    """Calculate total generation for AC generators over a specified time period.
+
+    Args:
+        n (pypsa.Network): The PyPSA network object.
+        time_start (str or pd.Timestamp, optional): Start time for filtering. Defaults to None.
+        time_end (str or pd.Timestamp, optional): End time for filtering. Defaults to None.
+        use_nice_names (bool, optional): Whether to replace carrier names for imports. Defaults to False.
+
+    Returns:
+        pd.Series: Total generation of AC generators over the specified time period."""
+
+    supply_stats = n.statistics.supply(
+        aggregate_time=False,
+        bus_carrier="AC",
+        groupby=["location", "carrier"],
+        comps=["Generator", "Link", "StorageUnit"],
+        nice_names=use_nice_names,
+    ).fillna(0)
+    time_start = "2035-01-01"
+    time_end = "2035-01-07"
+
+    # Filter by time if specified
+    if time_start is not None or time_end is not None:
+        # Convert strings to timestamps if needed
+        if isinstance(time_start, str):
+            time_start = pd.to_datetime(time_start)
+        if isinstance(time_end, str):
+            time_end = pd.to_datetime(time_end)
+
+        # Filter time columns
+        if time_start is not None and time_end is not None:
+            time_mask = (supply_stats.columns >= time_start) & (supply_stats.columns <= time_end)
+        elif time_start is not None:
+            time_mask = supply_stats.columns >= time_start
+            # Rename carrier 'AC' -> 'imports' in the row MultiIndex (level 2)
+            if supply_stats.index.nlevels >= 3:
+                idx_df = supply_stats.index.to_frame(index=False)
+                carrier_col = "carrier" if "carrier" in idx_df.columns else idx_df.columns[2]
+                idx_df[carrier_col] = idx_df[carrier_col].replace({"AC": "imports"})
+                supply_stats.index = pd.MultiIndex.from_frame(idx_df)
+        elif time_end is not None:
+            time_mask = supply_stats.columns <= time_end
+
+        supply_stats = supply_stats.loc[:, time_mask]
+
+    # Sum generation over selected time period
+    total_generation = supply_stats.sum(axis=1)
+    return total_generation
+
+
 def calc_generation_share(df, n, carrier):
     """
     Add generation share column to an existing DataFrame.
