@@ -49,6 +49,7 @@ dependencies:
   - tabula-py
   - chardet
   - ultraplot
+  - bs4
 
   # Keep in conda environment when calling ipython
   - ipython
@@ -59,6 +60,7 @@ dependencies:
   - cartopy
   - descartes
   - rasterio
+  - worldpoppy
 
   - pip:
     - vresutils>=0.3.1
