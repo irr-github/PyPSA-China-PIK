@@ -21,7 +21,12 @@ from _plot_utilities import (
     annotate_heatmap,
     make_nice_tech_colors,
 )
-from _pypsa_helpers import calc_lcoe, filter_carriers, calc_generation_share
+from _pypsa_helpers import (
+    calc_lcoe,
+    filter_carriers,
+    calc_generation_share,
+    calculate_marginal_costs,
+)
 from constants import (
     PLOT_CAP_LABEL,
     PLOT_CAP_UNITS,
@@ -282,6 +287,265 @@ def plot_capacity_factor(
     ax.legend()
 
     return ax
+
+
+def _calculate_generation(
+    n: pypsa.Network, time_start=None, time_end=None, use_nice_names=False
+) -> pd.Series:
+    """Calculate total generation for AC generators over a specified time period.
+
+    Args:
+        n (pypsa.Network): The PyPSA network object.
+        time_start (str or pd.Timestamp, optional): Start time for filtering. Defaults to None.
+        time_end (str or pd.Timestamp, optional): End time for filtering. Defaults to None.
+        use_nice_names (bool, optional): Whether to replace carrier names for imports. Defaults to False.
+
+    Returns:
+        pd.Series: Total generation of AC generators over the specified time period."""
+
+    supply_stats = n.statistics.supply(
+        aggregate_time=False,
+        bus_carrier="AC",
+        groupby=["location", "carrier"],
+        comps=["Generator", "Link", "StorageUnit"],
+        nice_names=use_nice_names,
+    ).fillna(0)
+    time_start = "2035-01-01"
+    time_end = "2035-01-07"
+
+    # Filter by time if specified
+    if time_start is not None or time_end is not None:
+        # Convert strings to timestamps if needed
+        if isinstance(time_start, str):
+            time_start = pd.to_datetime(time_start)
+        if isinstance(time_end, str):
+            time_end = pd.to_datetime(time_end)
+
+        # Filter time columns
+        if time_start is not None and time_end is not None:
+            time_mask = (supply_stats.columns >= time_start) & (supply_stats.columns <= time_end)
+        elif time_start is not None:
+            time_mask = supply_stats.columns >= time_start
+            # Rename carrier 'AC' -> 'imports' in the row MultiIndex (level 2)
+            if supply_stats.index.nlevels >= 3:
+                idx_df = supply_stats.index.to_frame(index=False)
+                carrier_col = "carrier" if "carrier" in idx_df.columns else idx_df.columns[2]
+                idx_df[carrier_col] = idx_df[carrier_col].replace({"AC": "imports"})
+                supply_stats.index = pd.MultiIndex.from_frame(idx_df)
+        elif time_end is not None:
+            time_mask = supply_stats.columns <= time_end
+
+        supply_stats = supply_stats.loc[:, time_mask]
+
+    # Sum generation over selected time period
+    total_generation = supply_stats.sum(axis=1)
+    return total_generation
+
+
+def plot_merit_order(
+    n: pypsa.Network,
+    tech_colors=None,
+    location=None,
+    time_start=None,
+    time_end=None,
+    threshold=10,
+    supply_units=1e6,
+    y_min=0.2,
+):
+    """Simplified plot merit order curve using calculate_generation and calculate_marginal_prices.
+
+    Args:
+        n (pypsa.Network): The network object.
+        tech_colors (dict): Technology color mapping from config["plotting"]["tech_colors"].
+        location (str or list): Filter by location (optional).
+        time_start (str or pd.Timestamp): Start time for filtering (optional).
+        time_end (str or pd.Timestamp): End time for filtering (optional).
+        threshold (float): Remove generation values below this threshold. Defaults to 10.
+        supply_units (float): Conversion factor to get GWh. Defaults to 1e6.
+        y_min (float): Minimum value for y-axis to ensure zero marginal cost technologies are visible.
+    """
+
+    # Use global tech_colors if not provided
+    if tech_colors is None:
+        tech_colors = globals().get("tech_colors", {})
+
+    # Get generation amounts using calculate_generation
+    generation = _calculate_generation(n, time_start=time_start, time_end=time_end)
+
+    # Filter by location if specified
+    if location:
+        # Filter generation data by location
+        location_mask = generation.index.get_level_values("location") == location
+        generation = generation[location_mask]
+    else:
+        # Remove transmission/AC carrier for non-location specific plots
+        carrier_vals = generation.index.get_level_values(-1)
+        generation = generation[carrier_vals != "AC"]
+
+    # Remove generation values below threshold
+    generation = generation[generation > threshold]
+
+    # Convert to GWh using supply_units conversion factor
+    generation_gwh = generation / supply_units
+
+    # Get marginal costs using calculate_marginal_costs (apply location filter there too)
+    marginal_costs, marginal_links = calculate_marginal_costs(n, location=location)
+
+    # Create proper merging strategy using groupby as suggested
+    marginal_costs_grouped = marginal_costs.groupby(
+        [n.generators.carrier, n.generators.location]
+    ).first()
+    # Clip marginal costs at y_min so values below y_min become y_min
+    marginal_costs_grouped = pd.to_numeric(marginal_costs_grouped, errors="coerce").clip(
+        lower=y_min
+    )
+
+    marginal_storage_units = pd.Series(dtype=float)
+    if "StorageUnit" in generation.index.get_level_values(0):
+        marginal_storage_units = n.storage_units["marginal_cost"].copy().clip(lower=y_min)
+
+    # Create DataFrame for plotting
+    plot_data = []
+
+    for idx, gen_value in generation_gwh.items():
+        component, loc, carrier = idx
+        if carrier == "AC" or carrier == "Ac":
+            carrier = "imports"
+
+        # Default marginal cost
+        marginal_cost = y_min
+
+        # Process Generator components
+        if component == "Generator":
+            # Look up marginal cost using carrier and location
+            try:
+                marginal_cost = marginal_costs_grouped.loc[(carrier.lower(), loc)]
+            except KeyError:
+                raise Exception("Carrier not found in marginals:", carrier, loc)
+
+        # Process Link components (this includes CHP and gas plants)
+        elif component == "Link":
+            # Find links with this carrier and location
+            link_mask = n.links.carrier == carrier
+            if loc and "location" in n.links.columns:
+                link_mask = link_mask & (n.links.location == loc)
+
+            if link_mask.any():
+                # Get marginal cost from marginal_links
+                link_indices = n.links.index[link_mask]
+                if len(link_indices) > 0:
+                    # Use the first matching link's marginal cost
+                    link_idx = link_indices[0]
+                    if link_idx in marginal_links.index:
+                        marginal_cost = max(marginal_links.loc[link_idx], y_min)
+                    else:
+                        marginal_cost = y_min
+
+        # Process StorageUnit components
+        elif component == "StorageUnit":
+            # Find storage units with this carrier and location
+            storage_mask = pd.Series(True, index=n.storage_units.index)
+            if "carrier" in n.storage_units.columns:
+                storage_mask = storage_mask & (n.storage_units.carrier == carrier)
+            if loc and "location" in n.storage_units.columns:
+                storage_mask = storage_mask & (n.storage_units.location == loc)
+
+            if storage_mask.any():
+                storage_indices = n.storage_units.index[storage_mask]
+                if len(storage_indices) > 0:
+                    storage_idx = storage_indices[0]
+                    if storage_idx in marginal_storage_units.index:
+                        marginal_cost = marginal_storage_units.loc[storage_idx]
+                    else:
+                        marginal_cost = y_min
+
+        # Process Store components
+        elif component == "Store":
+            # Stores typically have zero marginal cost
+            marginal_cost = y_min
+
+        plot_data.append(
+            {
+                "component": component,
+                "location": loc,
+                "carrier": carrier,
+                "generation": gen_value,
+                "marginal_cost": marginal_cost,
+            }
+        )
+
+    # Create DataFrame and sort by marginal cost
+    df = pd.DataFrame(plot_data)
+    df_sorted = df.sort_values("marginal_cost")
+
+    # Plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    left = 0
+    handles = []
+    labels = []
+    carrier_colors = {}
+
+    for _, row in df_sorted.iterrows():
+        carrier = row["carrier"]
+
+        # Get color for this carrier
+        if carrier in tech_colors:
+            color = tech_colors[carrier]
+        else:
+            # Try lowercase version
+            carrier_lower = carrier.lower()
+            matching_keys = [k for k in tech_colors.keys() if k.lower() == carrier_lower]
+            if matching_keys:
+                color = tech_colors[matching_keys[0]]
+            else:
+                # Try partial matches for common patterns
+                if "imports" in carrier_lower:
+                    color = tech_colors.get("imports", "green")
+                else:
+                    color = "gray"
+
+        # Track unique carriers for legend
+        if carrier not in carrier_colors:
+            carrier_colors[carrier] = color
+
+        # Plot bar
+        ax.bar(
+            x=left,
+            height=row["marginal_cost"],
+            width=row["generation"],
+            align="edge",
+            color=color,
+            edgecolor="white",
+            linewidth=0.5,
+            alpha=0.9,
+        )
+        left += row["generation"]
+
+    # Create legend
+    for carrier, color in carrier_colors.items():
+        handles.append(plt.Rectangle((0, 0), 1, 1, color=color, alpha=0.8))
+        labels.append(carrier.title())
+
+    ax.legend(handles, labels, loc="upper left", bbox_to_anchor=(1.05, 1))
+    ax.set_xlabel("Cumulative Generation [GWh]")
+    ax.set_ylabel("Marginal Cost [€/MWh]")
+    if not time_start:
+        time_start = n.snapshots.min()
+    if not time_end:
+        time_end = n.snapshots.max()
+    if location:
+        ax.set_title(f"Merit Order Curve - {location} from {time_start} to {time_end}")
+    else:
+        ax.set_title(f"Merit Order Curve from {time_start} to {time_end}")
+    ax.grid(True, alpha=0.3)
+
+    # Set y-axis minimum if specified to ensure zero marginal cost technologies are visible
+
+    max_cost = df_sorted["marginal_cost"].max()
+    ax.set_ylim(0, max_cost * 1.05)
+    plt.tight_layout()
+    plt.show()
 
 
 def prepare_province_peakload_capacity_data(n, attached_carriers=None):

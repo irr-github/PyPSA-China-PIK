@@ -209,6 +209,40 @@ def calc_lcoe(
     return outputs[outputs.supply > 0]
 
 
+def calculate_marginal_costs(n: pypsa.Network, location=None) -> tuple[pd.Series, pd.Series]:
+    """Calculate marginal costs for all AC generators, optionally filtered by location.
+    This is made more complex by the fact that some generators are modelled as links with fuel generators
+
+    Args:
+        n (pypsa.Network): The PyPSA network object.
+        location (str, optional): Location to filter generators. Defaults to None
+
+    Returns:
+        pd.Series: Marginal costs of the selected generators, links."""
+    elec_mask = n.generators.bus.map(n.buses.carrier) == "AC"
+    generators = n.generators[elec_mask]
+
+    elec_mask_l = n.links.bus1.map(n.buses.carrier) == "AC"
+    links = n.links[elec_mask_l].copy()
+
+    gen_by_bus = n.generators.groupby("bus").apply(lambda df: df.index[0])
+    fuels = links["bus0"].map(gen_by_bus).dropna()
+    eff = (
+        links.loc[fuels.index].efficiency.replace(0, 0.0001).fillna(1)
+    )  # avoid zero div (questionable)
+    fuel_costs = n.generators.loc[fuels].marginal_cost.values / eff
+    marginal_links = links.marginal_cost
+    marginal_links = marginal_links.add(fuel_costs, fill_value=0.0)
+
+    if location:
+        generators = generators[generators.location == location]
+        links = links[links.location == location]
+
+    marginal_costs = generators.marginal_cost.fillna(0)
+
+    return (marginal_costs, marginal_links)
+
+
 def calc_generation_share(df, n, carrier):
     """
     Add generation share column to an existing DataFrame.
