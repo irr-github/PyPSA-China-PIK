@@ -1,4 +1,3 @@
-# coding: utf-8
 """
 Functions to add brownfield capacities to the network for a reference year
 - adds VREs per grade and corrects technical potential. Best available grade is chosen
@@ -9,17 +8,16 @@ Functions to add brownfield capacities to the network for a reference year
 
 
 import logging
-import numpy as np
-import pandas as pd
-import pypsa
-
 import re
 from types import SimpleNamespace
 
-from constants import YEAR_HRS
-from add_electricity import load_costs
-from _helpers import mock_snakemake, configure_logging, ConfigManager
+import numpy as np
+import pandas as pd
+import pypsa
+from _helpers import configure_logging, mock_snakemake
 from _pypsa_helpers import shift_profile_to_planning_year
+from add_electricity import load_costs
+from constants import YEAR_HRS
 
 # TODO possibly reimplement to have env separation
 from rpycpl.technoecon_etl import to_list
@@ -45,7 +43,7 @@ def add_build_year(n: pypsa.Network, plan_year: int):
 
 
 def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series) -> pd.DataFrame:
-    """distribute vre capacities by grade potential, use up better grades first
+    """Distribute vre capacities by grade potential, use up better grades first
 
     Args:
         cap_by_year (pd.Series): the vre tech potential p_nom_max added per year
@@ -262,7 +260,7 @@ def add_power_capacities_installed_before_baseyear(
     for grouping_year, generator, resource_grade in df_.index:
         build_year = 1 if grouping_year == "brownwfield" else grouping_year
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
-        if not carrier_map.get(generator, "missing") in defined_carriers:
+        if carrier_map.get(generator, "missing") not in defined_carriers:
             logger.warning(
                 f"Carrier {carrier_map.get(generator, None)} for {generator} not defined in network"
                 "Consider adding to the CARRIER_MAP"
@@ -615,7 +613,8 @@ def add_paid_off_capacity(
         paid_off_caps (pd.DataFrame): DataFrame with paid off capacities & columns
             [tech_group, Capacity, techs]
         costs (pd.DataFrame): techno-economic data for the technologies
-        cutoff (int, optional): minimum capacity to be considered. Defaults to 100 MW."""
+        cutoff (int, optional): minimum capacity to be considered. Defaults to 100 MW.
+    """
 
     paid_off = paid_off_caps.reset_index()
 

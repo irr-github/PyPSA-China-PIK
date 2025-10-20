@@ -73,9 +73,7 @@ class ConfigManager:
         raise NotImplementedError
 
 
-# TODO add dataclass for Config
-
-
+# TODO add dataclass for Config ? or otherwise validate
 class GHGConfigHandler:
     """A class to handle & validate GHG scenarios in the config"""
 

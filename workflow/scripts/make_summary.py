@@ -795,7 +795,12 @@ if __name__ == "__main__":
     df = make_summaries(networks_dict, opts=summary_cfg)
     df["metrics"].loc["total costs"] = df["costs"].sum()
 
-    def to_csv(dfs, dir):
+    def to_csv(dfs: dict[str, pd.DataFrame], dir: str):
+        """Export dataframes to CSV files in the given directory
+        
+        Args:
+            dfs (dict[str, pd.DataFrame]): dictionary of dataframes to export
+            dir (str): directory to save the CSV files"""
         os.makedirs(dir, exist_ok=True)
         for key, df in dfs.items():
             df.to_csv(os.path.join(dir, f"{key}.csv"))

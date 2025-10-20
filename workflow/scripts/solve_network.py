@@ -13,17 +13,10 @@ import numpy as np
 import pandas as pd
 import pypsa
 import xarray as xr
-import pandas as pd
-
-from pypsa.descriptors import get_switchable_as_dense as get_as_dense
-import os
-
-
-from _pypsa_helpers import store_duals_to_network
-from _helpers import configure_logging, mock_snakemake, setup_gurobi_tunnel_and_env, ConfigManager
-from _pypsa_helpers import mock_solve, filter_carriers
+from _helpers import ConfigManager, configure_logging, mock_snakemake, setup_gurobi_tunnel_and_env
+from _pypsa_helpers import filter_carriers, mock_solve, store_duals_to_network
 from constants import YEAR_HRS
-from pandas import DatetimeIndex
+from pypsa.descriptors import get_switchable_as_dense as get_as_dense
 
 pypsa.pf.logger.setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
@@ -439,6 +432,7 @@ def add_land_use_constraint(n: pypsa.Network, planning_horizons: str | int) -> N
 def add_water_tank_charger_constraints(n: pypsa.Network, config: dict):
     """
     Add constraint ensuring that centra water tank charger = discharger & limit p_nom/e_nom ratio, i.e.
+
     Args:
         n (pypsa.Network): the network object to optimize
         config (dict): the snakemake configuration dictionary
@@ -591,7 +585,7 @@ def add_remind_paid_off_constraints(n: pypsa.Network) -> None:
             paidoff_comp.dropna(subset=[paid_off_col], inplace=True)
 
         # techs that only exist as paid-off don't have usual counterparts
-        remind_only = n.config["existing_capacities"].get("remind_only_tech_groups", [])  # no qa: F
+        remind_only = n.config["existing_capacities"].get("remind_only_tech_groups", [])  # noqa: F841
         paidoff_comp = paidoff_comp.query("tech_group not in @remind_only")
 
         if paidoff_comp.empty:
@@ -645,14 +639,14 @@ def add_operational_reserve_margin(n: pypsa.network, config):
             contingency: 400000 # MW
     """
     reserve_config = config["operational_reserve"]
-    VRE_TECHS = config["Techs"].get("non_dispatchable", ["onwind", "offwind", "solar"])
+    VRE_TECHS = config["Techs"].get("non_dispatchable", ["onwind", "offwind", "solar"]) # noqa: F841
     EPSILON_LOAD, EPSILON_VRES = reserve_config["epsilon_load"], reserve_config["epsilon_vres"]
     CONTINGENCY = float(reserve_config["contingency"])
 
     # AC producers
     ac_mask = n.generators.bus.map(n.buses.carrier) == "AC"
-    ac_buses = n.buses.query("carrier =='AC'").index
-    attached_carriers = filter_carriers(n, "AC")
+    ac_buses = n.buses.query("carrier =='AC'").index # noqa: F841
+    attached_carriers = filter_carriers(n, "AC") # noqa: F841
     # conceivably a link could have a negative efficiency and flow towards bus0 - don't consider
     prod_links = n.links.query("carrier in @attached_carriers & not bus0 in @ac_buses")
     transport_links = prod_links.bus0.map(n.buses.carrier) == prod_links.bus1.map(n.buses.carrier)

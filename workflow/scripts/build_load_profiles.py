@@ -165,7 +165,7 @@ def build_daily_heat_demand_profiles(
 
 
 def downscale_by_pop(total: pd.Series, population: pd.Series) -> pd.Series:
-    """simple downscale by population
+    """Simple downscale by population
 
     Args:
         total (pd.Series): the value to downsacale

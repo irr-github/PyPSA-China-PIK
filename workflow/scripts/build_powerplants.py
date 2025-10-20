@@ -13,14 +13,13 @@ Nodes can be assigned to specific GEM IDs based on their GPS location or adminis
 """
 
 import logging
+import os
+
+import geopandas as gpd
 import numpy as np
 import pandas as pd
-import geopandas as gpd
-import os
-from pathlib import Path
+from _helpers import configure_logging, mock_snakemake
 from shapely.geometry import Point
-
-from _helpers import mock_snakemake, configure_logging
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ def load_gem_excel(
     df.columns = df.columns.str.replace("/", "_")
     country_col = country_col.replace("/", "_")
 
-    if not country_col in df.columns:
+    if country_col not in df.columns:
         logger.warning(f"Column {country_col} not found in {path}. Returning unfiltered DataFrame.")
         return df
 
@@ -69,7 +68,8 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
         gem_data (pd.DataFrame): GEM dataset.
         gem_cfg (dict): Configuration dictionary, 'global_energy_monitor.yaml'
     Returns:
-        pd.DataFrame: Cleaned GEM data."""
+        pd.DataFrame: Cleaned GEM data.
+    """
 
     valid_project_states = gem_cfg["status"]
     GEM = gem_data.query("Status in @valid_project_states")
@@ -154,8 +154,10 @@ def assign_node_from_gps(gem_data: pd.DataFrame, nodes: gpd.GeoDataFrame) -> pd.
     Args:
         gem_data (pd.DataFrame): GEM data
         nodes (gpd.GeoDataFrame): node geometries (nodes as index).
+
     Returns:
-        pd.DataFrame: DataFrame with assigned nodes."""
+        pd.DataFrame: DataFrame with assigned nodes.
+    """
 
     gem_data["geometry"] = gem_data.apply(
         lambda row: Point(row["Longitude"], row["Latitude"]), axis=1

@@ -28,6 +28,17 @@ def add_hydro(
     planning_horizons: int,
     fake_hydro_at_node: bool = False,
 ):
+    """Add hydro technologies to network
+
+    Args:
+        network (pypsa.Network): pypsa network
+        config (dict): configuration dictionary
+        nodes (pd.Index): index of nodes
+        prov_shapes (gpd.GeoDataFrame): province shapes
+        costs (pd.DataFrame): costs dataframe
+        planning_horizons (int): number of planning horizons
+        fake_hydro_at_node (bool, optional): if True, adds fake hydro at nodes. Defaults to False.
+    """
     # load dams
     df = pd.read_csv(config["hydro_dams"]["dams_path"], index_col=0)
     points = df.apply(lambda row: Point(row.Lon, row.Lat), axis=1)

@@ -791,6 +791,7 @@ def plot_co2_shadow_price(file_list: list, config: dict, fig_name=None):
 
 
 def plot_investments(file_list: list, config: dict, fig_name=None, ax: object = None):
+    """Plot the investments"""
     pass
 
 

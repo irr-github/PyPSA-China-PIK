@@ -1,14 +1,13 @@
 """Helper functions for pypsa network handling"""
 
-import os
-import pandas as pd
-import numpy as np
 import logging
-import pytz
+import os
 import re
 
+import numpy as np
+import pandas as pd
 import pypsa
-
+import pytz
 
 # get root logger
 logger = logging.getLogger()
@@ -49,7 +48,7 @@ def get_location_and_carrier(
 
 
 def filter_carriers(n: pypsa.Network, bus_carriers=["AC"], comps=["Generator", "Link"]) -> list:
-    """filter carriers for links that attach to a bus of the target carrier
+    """Filter carriers for links that attach to a bus of the target carrier
 
     Args:
         n (pypsa.Network): the pypsa network object
