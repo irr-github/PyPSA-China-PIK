@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 def find_worldpop_url(url):
     """Explore the contents of a WorldPop directory to find available files."""
+
+    logger.info(f"Searching WorldPop directory: {url}")
     try:
         response = requests.get(url)
         response.raise_for_status()
@@ -39,13 +41,13 @@ def find_worldpop_url(url):
         return []
 
 
-def download_world_pop(base_url: str, filename: str, output_dir: str = "worldpop_2024_data.tif") -> str:
+def download_world_pop(base_url: str, filename: str, output_path: str = "worldpop_2024_data.tif") -> str:
     """Download the population per pixel raster data from WorldPop.
     
     Args:
         base_url (str): Base URL for the WorldPop data directory
         filename (str): Name of the file to download.
-        output_dir (os.PathLike, Optional): Directory to save the downloaded file. Defaults to "worldpop_2024_data.tif".
+        output_path (os.PathLike, Optional): Directory to save the downloaded file. Defaults to "worldpop_2024_data.tif".
         
     Returns:
         Path to the downloaded file, or None if download failed
@@ -57,10 +59,8 @@ def download_world_pop(base_url: str, filename: str, output_dir: str = "worldpop
     url = base_url + filename
 
     # Create output directory if it doesn't exist
+    output_dir = os.path.dirname(output_path)
     os.makedirs(output_dir, exist_ok=True)
-
-    # Full path to the output file
-    output_path = os.path.join(output_dir, filename)
 
     # Check if file already exists
     if os.path.exists(output_path):

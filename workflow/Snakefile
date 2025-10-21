@@ -83,25 +83,13 @@ elif config["foresight"] in ["overnight", "myopic"]:
 else:
     raise ValueError("Invalid scenario config: {}".format(config["foresight"]))
 
-rule process_config:
-    output:
-        config="config_test.yaml"
-    script:
-        "scripts/process_config.py"
-#    ======== Workflow ===========
-rule build_population:
-    input:
-        # https://www.stats.gov.cn/sj/ndsj/2023/indexeh.htm
-        population="resources/data/population/population_from_national_data.csv"
-    output:
-        population=DERIVED_COMMON+"/"+"population/population.h5"
-    threads: 1
-    resources: mem_mb=1000
-    log: LOGS_COMMON + "/build_population.log"
-    script: "scripts/build_population.py"
 
+#    ======== Workflow ===========
+# TODO regions
 if config['enable'].get('build_cutout', False):
     rule build_cutout:
+        params:
+            config=config
         input:
             regions_onshore="resources/data/regions/regions_onshore.geojson",
             regions_offshore="resources/data/regions/regions_offshore.geojson"
@@ -112,7 +100,25 @@ if config['enable'].get('build_cutout', False):
         resources: mem_mb=ATLITE_NPROCESSES * 1000
         script: "scripts/build_cutout.py"
 
+
+rule build_population:
+    params:
+        population_year = 2022,
+        pop_conversion = 1e4, # YEARBOOK_DATA2POP
+    input:
+        # https://www.stats.gov.cn/sj/ndsj/2023/indexeh.htm
+        population="resources/data/population/population_from_national_data.csv"
+    output:
+        population=DERIVED_COMMON+"/"+"population/population.h5"
+    threads: 1
+    resources: mem_mb=1000
+    log: LOGS_COMMON + "/build_population.log"
+    script: "scripts/build_population.py"
+
+
 rule build_population_gridcell_map:
+    params:
+        config=config
     input:
         cutout=CUTOUT_PATH,
         province_populations=DERIVED_COMMON+"/population/population.h5",
@@ -126,6 +132,54 @@ rule build_population_gridcell_map:
     threads: 1
     resources: mem_mb=35000
     script: "scripts/build_population_gridcell_map.py"
+
+
+pop_raster = name = "-".join([str(v) for v in config["world_population_raster"].values()])
+rule build_population_layouts:
+    params:
+        pop_year = 2022, # for urban and province, for gridded see fetch
+        pop_conversion = 1e4, # conversion for province_populations
+    input:
+        province_populations="resources/data/population/population_from_national_data.csv",
+        population_gridded=f"resources/data/population/china_world_pop_{name}.tif",
+        province_shape=DERIVED_COMMON + "/regions/provinces_onshore.geojson",
+        urban_percent="resources/data/population/china_urban_population_proportion_2013_2022.csv",
+        cutout=CUTOUT_PATH,
+    output:
+        pop_layout_total=DERIVED_COMMON + "pop_layout_total.nc",
+        pop_layout_urban=DERIVED_COMMON + "pop_layout_urban.nc",
+        pop_layout_rural=DERIVED_COMMON + "pop_layout_rural.nc",
+    log:
+        LOGS_COMMON + "build_population_layouts.log",
+    resources:
+        mem_mb=20000,
+    benchmark: "build_population_layouts"
+    threads: 8
+    conda:
+        "../envs/environment.yaml"
+    script:
+        "../scripts/build_population_provinces.py"
+
+
+# rule build_clustered_population_layouts:
+#     input:
+#         pop_layout_total=resources("pop_layout_total.nc"),
+#         pop_layout_urban=resources("pop_layout_urban.nc"),
+#         pop_layout_rural=resources("pop_layout_rural.nc"),
+#         regions_onshore=resources("regions_onshore_base_s_{clusters}.geojson"),
+#         cutout=lambda w: input_cutout(w),
+#     output:
+#         clustered_pop_layout=resources("pop_layout_base_s_{clusters}.csv"),
+#     log:
+#         logs("build_clustered_population_layouts_s_{clusters}.log"),
+#     resources:
+#         mem_mb=10000,
+#     benchmark:
+#         benchmarks("build_clustered_population_layouts/s_{clusters}")
+#     conda:
+#         "../envs/environment.yaml"
+#     script:
+#         "../scripts/build_clustered_population_layouts.py"
 
 # TODO merge all techs into a single csv
 # TODO add node wildcard/id
@@ -157,6 +211,8 @@ rule build_solar_thermal_profiles:
     script: "scripts/build_solar_thermal_profiles.py"
 
 rule build_temperature_profiles:
+    params:
+        nodes = config["nodes"],
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
         cutout=CUTOUT_PATH
@@ -168,6 +224,8 @@ rule build_temperature_profiles:
     script: "scripts/build_temperature_profiles.py"
 
 rule build_cop_profiles:
+    params:
+        nodes = config["nodes"],
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
         cutout=CUTOUT_PATH,
@@ -181,6 +239,8 @@ rule build_cop_profiles:
 
 rasters = ["Build_up", "Grass", "Bare", "Shrubland"]
 rule build_availability_matrix:
+    params:
+        nodes = config["nodes"],
     input:
         # GEBCO bathymetry (water depth)
         gebco=f"{LU_RASTER}/GEBCO_tiff/gebco_2024_CN.tif",
@@ -209,6 +269,7 @@ rule build_availability_matrix:
 
 rule build_renewable_profiles:
     params:
+        config = config,
         resource_classes = lambda wildcards: config["renewable"][wildcards.technology]["resource_classes"]
     input:
         availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}.nc",
@@ -230,6 +291,7 @@ rule build_renewable_profiles:
 # TODO check whether energy totals still needed
 rule build_load_profiles:
     params:
+        config = config,
         elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
     input:
         population = DERIVED_COMMON + "/population/population.h5",
