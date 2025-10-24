@@ -61,6 +61,8 @@ dependencies:
   - descartes
   - rasterio
   - worldpoppy
+  - xesmf
+  
 
   - pip:
     - vresutils>=0.3.1
