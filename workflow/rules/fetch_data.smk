@@ -25,6 +25,8 @@ release_yr, rev, yr, v = (
     config["world_population_raster"]["year"],
     config["world_population_raster"]["version"],
 )
+print(f"resources/data/population/china_world_pop_{name}.tif")
+print(f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/")
 
 rule fetch_gridded_population:
     params:
