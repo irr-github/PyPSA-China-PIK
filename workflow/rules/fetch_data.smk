@@ -6,6 +6,7 @@ import os
 # TODO rework this, save shapes with all admin levels
 # build nodes with another script and save that to DERIVED_DATA
 # nodes could be read by snakefile and passed as a param to the relevant rules
+
 rule fetch_region_shapes:
     output:
         country_shape=DERIVED_COMMON + "/regions/country.geojson",
@@ -25,8 +26,9 @@ release_yr, rev, yr, v = (
     config["world_population_raster"]["year"],
     config["world_population_raster"]["version"],
 )
-print(f"resources/data/population/china_world_pop_{name}.tif")
-print(f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/")
+
+print(f"Raster Pop target is: resources/data/population/china_world_pop_{name}.tif")
+print(f"from https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/")
 
 rule fetch_gridded_population:
     params:
@@ -37,7 +39,7 @@ rule fetch_gridded_population:
     log:
         LOGS_COMMON + "/fetch_gridded_population.log",
     script:
-        "../scripts/fetch_gridded_population.py"
+        "../scripts/fetch_gridded_pop.py"
 
 # TODO build actual fetch rules with the sentinel/copernicus APIs.
 # TODO See if there are datasets succeeding the S2 LC100 cover to get newer data
