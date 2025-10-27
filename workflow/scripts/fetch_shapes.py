@@ -233,7 +233,7 @@ def fetch_prefecture_shapes(
         for old_name, new_name in fix_dict.items():
             mask = gdf.query(f"{col} == '{old_name}'").index
             gdf.loc[mask, col] = new_name
-    return gdf[["COUNTRY", "NAME_1", "NAME_2", "geometry"]]
+    return gdf[["COUNTRY", "NAME_1", "NAME_2", "NL_NAME2", "NL_NAME1", "geometry"]]
 
 
 def build_nodes(
@@ -438,27 +438,22 @@ if __name__ == "__main__":
 
     logger.info(f"Fetching province shapes for {COUNTRY_ISO} from cartopy")
     # TODO it would be better to filter by set regions after making the voronoi polygons
-    if not nodes_config.get("split_provinces", False):
-        regions = fetch_province_shapes()
-    else:
-        logger.info("Splitting provinces into user defined nodes")
-        prefectures = fetch_prefecture_shapes()
-        nodes = build_nodes(prefectures, nodes_config)
-        nodes.simplify(tol["land"]).to_file(
-            snakemake.output.province_shapes.replace(".geojson", "_nodestest.geojson"),
-            driver="GeoJSON",
-        )
+    regions = fetch_province_shapes()
+    prefectures = fetch_prefecture_shapes()
+    # nodes = build_nodes(prefectures, nodes_config)
+    # nodes.simplify(tol["land"]).to_file(
+    #     snakemake.output.province_shapes.replace(".geojson", "_nodestest.geojson"),
+    #     driver="GeoJSON",
+    # )
 
-        raise NotImplementedError(
-            "Province splitting is not implemented accross the whole workflow yet."
-        )
 
     regions.to_file(snakemake.output.province_shapes, driver="GeoJSON")
-    regions.to_file(snakemake.output.prov_shpfile)
     logger.info(f"Province shapes saved to {snakemake.output.province_shapes}")
-
+    prefectures.to_file(snakemake.output.admin2_shapes, driver="GeoJSON")
+    logger.info(f"Prefecture shapes saved to {snakemake.output.admin2_shapes}")
     logger.info(f"Fetching maritime zones for EEZ prefix {EEZ_PREFIX}")
     eez_country = fetch_maritime_eez(EEZ_PREFIX)
+
     logger.info("Breaking by reion")
     eez_by_region(eez_country, regions, prov_key="province", simplify_tol=tol["eez"]).to_file(
         snakemake.output.offshore_shapes, driver="GeoJSON"
