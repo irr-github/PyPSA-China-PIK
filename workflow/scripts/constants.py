@@ -29,6 +29,9 @@ TIMEZONE = "Asia/Shanghai"
 # THIS is used to heating demand and is a bit of a problem since currently all are set to
 # the administrative timezone and not the geo timezoones
 
+PROV_RENAME_MAP = {"Inner Mongolia": "InnerMongolia", "Ningxia Hui": "Ningxia", "Xizang": "Tibet"}
+
+
 REGIONAL_GEO_TIMEZONES_DEFAULT = {
     "Anhui": TIMEZONE,
     "Beijing": TIMEZONE,

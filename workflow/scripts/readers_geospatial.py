@@ -2,9 +2,10 @@
 
 import os
 
+import pandas as pd
 import geopandas as gpd
 import rioxarray
-from constants import CRS, OFFSHORE_WIND_NODES, PROV_NAMES
+from constants import CRS, OFFSHORE_WIND_NODES, PROV_NAMES, PROV_RENAME_MAP
 from xarray import DataArray
 
 
@@ -112,3 +113,69 @@ def read_offshore_province_shapes(
         )
 
     return offshore_regional
+
+
+def _fix_gadm41(df_admin_l2: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Fix known issues with GADM v4.1 China admin level 2 data.
+
+    Args:
+        df_admin_l2 (gpd.GeoDataFrame): GADM v4.1 China admin level 2 data.
+
+    Returns:
+        gpd.GeoDataFrame: Fixed GADM v4.1 China admin level 2 data.
+    """
+    RENAME_MAP = {
+        "Ma'anshan": "Maanshan",
+        "Ürümqi": "Urumqi",
+        "Neijiang]]": "Neijiang",
+        "Hainan": "Danzhou",
+    }
+    df_admin_l2["NAME_2"] = df_admin_l2.NAME_2.map(lambda x: RENAME_MAP.get(x, x))
+
+    # Chaohu has been redistributed over 3 districts in 2011. Attach it to Hefei (not correct)
+    # TODO check whether GADMv5 has fixed this issue
+
+    df_admin_l2.loc[df_admin_l2.NAME_2 == "Hefei", "geometry"] = df_admin_l2.loc[
+        df_admin_l2.NAME_2.isin(["Hefei", "Chaohu"])
+    ].union_all()
+    df_admin_l2 = df_admin_l2.query("NAME_2 != 'Chaohu'")
+
+    df_admin_l2.loc[df_admin_l2.NAME_2 == "Jinan", "geometry"] = df_admin_l2.loc[
+        df_admin_l2.NAME_2.isin(["Jinan", "Laiwu"])
+    ].union_all()
+    df_admin_l2 = df_admin_l2.query("NAME_2 != 'Laiwu'")
+
+    return df_admin_l2
+
+
+def read_admin2_shapes(path: str, fix=True, exclude=["Macau", "HongKong"]) -> gpd.GeoDataFrame:
+    """Read and preprocess administrative level 2 shape s (GADM41).
+
+    Args:
+        path (str): Path to the GeoJSON/shape file.
+        fix (bool, optional): Whether to fix inconsistencies in region names. Defaults to True.
+        exclude (list, optional): Regions to exclude from the data. Defaults to ["Macau", "HongKong"].
+
+    Returns:
+        gpd.GeoDataFrame: Preprocessed administrative level 2 shapes.
+    """
+
+    PROV_RENAME_MAP = {"Inner Mongolia": "InnerMongolia", "Ningxia Hui": "Ningxia", "Xizang": "Tibet"}
+    admin_l2 = gpd.read_file(path).query("NAME_1 not in @exclude")
+    admin_l2["NAME_1"] = admin_l2.NAME_1.map(lambda x: PROV_RENAME_MAP.get(x, x))
+
+    # merge duplicated region geometries
+    merged_geos = admin_l2.groupby(["NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1"]).apply(
+        lambda x: pd.Series(x.geometry.union_all()) if len(x) > 1 else x.geometry
+    )
+    merged_geos = merged_geos.to_frame().reset_index().query("NAME_1 not in @exclude")
+    admin_l2 = gpd.GeoDataFrame(
+        merged_geos[["NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1"]],
+        geometry=merged_geos[0],
+        crs=admin_l2.crs,
+    )
+
+    if fix:
+        return _fix_gadm41(admin_l2)
+    else:
+        return admin_l2

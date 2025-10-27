@@ -3,8 +3,7 @@
 import os
 import pandas as pd
 
-from constants import PROV_NAMES
-
+from constants import PROV_NAMES, PROV_RENAME_MAP
 
 def read_yearly_load_projections(
     yearly_projections_p: os.PathLike = "resources/data/load/Province_Load_2020_2060.csv",
@@ -51,8 +50,7 @@ def read_generic_province_data(
     data = pd.read_csv(data_p, index_col=index_col).rename_axis(index_name)
 
     # common fixes to province names
-    MAPS = {"Inner Mongolia": "InnerMongolia", "Ningxia Hui": "Ningxia", "Xizang": "Tibet"}
-    data.index = data.index.map(lambda x: MAPS.get(x, x))
+    data.index = data.index.map(lambda x: PROV_RENAME_MAP.get(x, x))
 
     missing = set(PROV_NAMES) - set(data.index)
     if missing:
