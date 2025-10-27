@@ -233,7 +233,7 @@ def fetch_prefecture_shapes(
         for old_name, new_name in fix_dict.items():
             mask = gdf.query(f"{col} == '{old_name}'").index
             gdf.loc[mask, col] = new_name
-    return gdf[["COUNTRY", "NAME_1", "NAME_2", "NL_NAME2", "NL_NAME1", "geometry"]]
+    return gdf[["COUNTRY", "NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1", "geometry"]]
 
 
 def build_nodes(
