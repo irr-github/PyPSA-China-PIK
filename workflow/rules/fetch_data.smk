@@ -6,13 +6,13 @@ import os
 # TODO rework this, save shapes with all admin levels
 # build nodes with another script and save that to DERIVED_DATA
 # nodes could be read by snakefile and passed as a param to the relevant rules
-
 rule fetch_region_shapes:
+    """Fetch administrative shape polygons"""
     output:
         country_shape=DERIVED_COMMON + "/regions/country.geojson",
         province_shapes=DERIVED_COMMON + "/regions/provinces_onshore.geojson",
         offshore_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
-        prov_shpfile=DERIVED_COMMON + "/province_shapes/CHN_adm1.shp",
+        admin2_shapes = DERIVED_COMMON + "/regions/admin2_shapes.geojson",
     log:
         LOGS_COMMON + "/fetch_regions_shapes.log",
     script:

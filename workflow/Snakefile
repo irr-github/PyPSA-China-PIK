@@ -125,7 +125,7 @@ rule build_population_gridcell_map:
         population_density_grid="resources/data/population/pop_density_china.nc",
         # TODO directly link to output of fetch region shapes
         # admin 1 level = first administrative level within country
-        province_shape=DERIVED_COMMON+"/province_shapes/CHN_adm1.shp",
+        province_shape="resources/data/province_shapes/CHN_adm1.shp",
     output:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5"
     log: LOGS_COMMON+"/build_population_gridcell_map.log"
@@ -160,26 +160,6 @@ rule build_population_layouts:
     script:
         "../scripts/build_population_provinces.py"
 
-
-# rule build_clustered_population_layouts:
-#     input:
-#         pop_layout_total=resources("pop_layout_total.nc"),
-#         pop_layout_urban=resources("pop_layout_urban.nc"),
-#         pop_layout_rural=resources("pop_layout_rural.nc"),
-#         regions_onshore=resources("regions_onshore_base_s_{clusters}.geojson"),
-#         cutout=lambda w: input_cutout(w),
-#     output:
-#         clustered_pop_layout=resources("pop_layout_base_s_{clusters}.csv"),
-#     log:
-#         logs("build_clustered_population_layouts_s_{clusters}.log"),
-#     resources:
-#         mem_mb=10000,
-#     benchmark:
-#         benchmarks("build_clustered_population_layouts/s_{clusters}")
-#     conda:
-#         "../envs/environment.yaml"
-#     script:
-#         "../scripts/build_clustered_population_layouts.py"
 
 # TODO merge all techs into a single csv
 # TODO add node wildcard/id
@@ -247,7 +227,7 @@ rule build_availability_matrix:
         cutout=CUTOUT_PATH,
         # TODO directly link to output of fetch region shapes
         # admin 1 level = first administrative level within country
-        province_shape=DERIVED_COMMON+"/province_shapes/CHN_adm1.shp",
+        province_shape="resources/data/province_shapes/CHN_adm1.shp",
         offshore_province_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
         # natural reserves from WPGDA, available land
         **{
@@ -273,7 +253,7 @@ rule build_renewable_profiles:
         resource_classes = lambda wildcards: config["renewable"][wildcards.technology]["resource_classes"]
     input:
         availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}.nc",
-        province_shape=DERIVED_COMMON + "/province_shapes/CHN_adm1.shp",
+        province_shape="resources/data/province_shapes/CHN_adm1.shp",
         offshore_province_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
         cutout=CUTOUT_PATH,
     output:
@@ -363,7 +343,7 @@ if config["foresight"] in ["overnight"]:
             elec_load=DERIVED_DATA + "/load/regio_hrly_ac_load_{planning_horizons}.h5",
             intraday_profiles="resources/data/heating/heat_load_profile_DK_AdamJensen.csv",
             tech_costs = COSTS_DATA + "/costs_{planning_horizons}.csv",
-            province_shape=DERIVED_COMMON+"/province_shapes/CHN_adm1.shp",
+            province_shape="resources/data/province_shapes/CHN_adm1.shp",
             biomass_potential=DERIVED_COMMON+f"{'/p_nom/biomass_potential.h5' if config["add_biomass"] else ''}",
             **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}.nc" for tech in config['renewable']},
         output:
@@ -417,7 +397,7 @@ elif config["foresight"] == "myopic":
             elec_load=DERIVED_DATA + "/load/regio_hrly_ac_load_{planning_horizons}.h5",
             # TODO: metadata for file, why does it need to be h5?
             tech_costs= COSTS_DATA + "/costs_{planning_horizons}.csv",
-            province_shape=DERIVED_COMMON +"/province_shapes/CHN_adm1.shp",
+            province_shape="resources/data/province_shapes/CHN_adm1.shp",
             **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}.nc" 
                 for tech in config['renewable']},
 
@@ -439,7 +419,7 @@ elif config["foresight"] == "myopic":
             solar_thermal_name=DERIVED_CUTOUT + f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5",
             elec_load=DERIVED_DATA + "/load/regio_hrly_ac_load_{planning_horizons}.h5",
             tech_costs= COSTS_DATA + "/costs_{planning_horizons}.csv",
-            province_shape=DERIVED_COMMON+"/province_shapes/CHN_adm1.shp",
+            province_shape="resources/data/province_shapes/CHN_adm1.shp",
             **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}.nc" 
                 for tech in config['renewable']},
         output:
