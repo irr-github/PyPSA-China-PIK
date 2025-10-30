@@ -9,10 +9,10 @@ import os
 rule fetch_region_shapes:
     """Fetch administrative shape polygons"""
     output:
-        country_shape=DERIVED_COMMON + "/regions/country.geojson",
-        province_shapes=DERIVED_COMMON + "/regions/provinces_onshore.geojson",
-        offshore_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
-        admin2_shapes = DERIVED_COMMON + "/regions/admin2_shapes.geojson",
+        country_shape="resources/data/regions/country.geojson",
+        province_shapes="resources/data/regions/provinces_onshore.geojson",
+        offshore_shapes="resources/data/regions/provinces_offshore.geojson",
+        admin2_shapes="resources/data/regions/admin2_shapes.geojson",
     log:
         LOGS_COMMON + "/fetch_regions_shapes.log",
     script:
@@ -87,6 +87,29 @@ rule retrieve_powerplants:
     run:
         os.makedirs(os.path.dirname(output.powerplants), exist_ok=True)
         shutil.move(input.powerplants, output.powerplants)
+
+# rule retrieve_gdp:
+#     """ See https://gee-community-catalog.org/projects/gridded_gdp_hdi/
+#     ML-based study https://www.nature.com/articles/s41597-025-04487-x .
+#     Use this until easier to get official county level data for China.
+#     Also possible to get data via google earth engine.
+#     """
+#     input:
+#         kummu_et_al_geo = storage.http("https://zenodo.org/records/16741980/files/polyg_adm2_gdp_perCapita_1990_2022.gpkg"),
+#         kummu_et_al_raster = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022_30arcmin.tif"),
+#         kummu_et_al_raster_hr = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif"),
+#         kummu_et_al_gdp_adm2 = storage.http("https://zenodo.org/records/16741980/files/rast_gdpTot_1990_2022_30arcmin.tif")
+#     output:
+#         kummu_et_al_geo = "resources/data/population/adm2_gdp_percapita_1990_2022.gpkg",
+#         kummu_et_al_raster = "resources/data/population/adm2_gdp_percapita_1990_2022.tif",
+#         kummu_et_al_raster_hr = "resources/data/population/adm2_gdp_percapita_1990_2022_hr.tif",
+#         kummu_et_al_gdp_adm2 = "resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif"
+#     run:
+#         os.makedirs(os.path.dirname(output.kummu_et_al_geo), exist_ok=True)
+#         shutil.move(input.kummu_et_al_geo, output.kummu_et_al_geo)
+#         shutil.move(input.kummu_et_al_raster, output.kummu_et_al_raster)
+#         shutil.move(input.kummu_et_al_raster_hr, output.kummu_et_al_raster_hr)
+#         shutil.move(input.kummu_et_al_gdp_adm2, output.kummu_et_al_gdp_adm2)
 
 
 if config["enable"].get("retrieve_cutout", False) and config["enable"].get(

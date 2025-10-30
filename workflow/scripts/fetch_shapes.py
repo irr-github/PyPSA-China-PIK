@@ -236,192 +236,6 @@ def fetch_prefecture_shapes(
     return gdf[["COUNTRY", "NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1", "geometry"]]
 
 
-def build_nodes(
-    prefectures: gpd.GeoDataFrame,
-    nodes_cfg: dict,
-) -> gpd.GeoSeries:
-    """Build the nodes, either directly at provincial (admin1) level or from adminlvk2 subregions
-
-    Args:
-      prefectures:
-    """
-    gdf = prefectures.copy()
-    if nodes_cfg.get("split_provinces", False):
-        validate_split_cfg(nodes_cfg["splits"], gdf)
-        return split_provinces(gdf, nodes_cfg)
-    else:
-        provs = provs = gdf.dissolve(GDAM_LV1)
-        provs = provs.drop([nodes_cfg["exclude_provinces"]])
-        return provs.rename_axis("node")["geometry"]
-
-
-def validate_split_cfg(split_cfg: dict, gdf: gpd.GeoDataFrame):
-    """Validate the province split configuration.
-    The province (admin level 1) is split by admin level 2 {subregion: [prefecture names],..}.
-    The prefecture names must be unique and cover all admin2 in the admin1 level.
-
-    Args:
-        split_cfg (dict): the configuration for the prefecture split
-        gdf (gpd.GeoDataFrame): the geodataframe with prefecture shapes
-    Raises:
-        ValueError: if the prefectures are not unique or do not cover all admin2 in the admin1 level
-    """
-    # validate_settings
-    for admin1 in split_cfg:
-        if admin1 not in gdf[GDAM_LV1].unique():
-            err_ = f"Invalid admin1 entry {admin1} not found in provinces {gdf[GDAM_LV1].unique()}"
-            raise ValueError(err_)
-
-        # flatten values
-        admin2 = []
-        for names, v in split_cfg[admin1].items():
-            admin2 += v
-
-        # check completeness
-        all_admin2 = gdf.query(f'{GDAM_LV1} == "{admin1}"')[GDAM_LV2].unique().tolist()
-        if not sorted(admin2) == sorted(all_admin2):
-            raise ValueError(
-                f"{admin1} prefectures do not match expected:\ngot {admin2}\nvs\n {all_admin2}"
-            )
-
-        # check uniqueness (pop -> must be after completeness check)
-        duplicated = any([admin2.pop() in admin2 for i in range(len(admin2))])
-        if duplicated:
-            raise ValueError(f"Duplicated prefecture names in {admin1}: {admin2}")
-
-
-# TODO consider returning country and province
-def split_provinces(prefectures: gpd.GeoDataFrame, node_config: dict) -> gpd.GeoSeries:
-    """
-    Split Inner Mongolia into East and West regions based on prefectures.
-
-    Args:
-        prefectures (gpd.GeoDataFrame): Gall chinese prefectures.
-        node_config (dict): the configuration for node build
-    Returns:
-        gpd.GeoDataFrame: Updated GeoDataFrame with Inner Mongolia split EAST/WEST.
-    """
-    gdf = prefectures.copy()
-    for admin1, splits in node_config["splits"].items():
-        mask = gdf.query(f"{GDAM_LV1} == '{admin1}'").index
-        splits_inv = {vv: admin1 + "_" + k for k, v in splits.items() for vv in v}
-        gdf.loc[mask, GDAM_LV1] = gdf.loc[mask, "NAME_2"].map(splits_inv)
-
-    # merge geometries by node
-    gdf.rename(columns={GDAM_LV1: "node"}, inplace=True)
-    return gdf[["node", "geometry"]].dissolve(by="node", aggfunc="sum")
-
-
-def cut_smaller_from_larger(
-    row: gpd.GeoSeries, gdf: gpd.GeoDataFrame, overlaps: DataFrame
-) -> gpd.GeoSeries:
-    """Automatically assign overlapping area to the smaller region
-
-    Example:
-        areas_gdf.apply(cut_smaller_from_larger, args=(areas_gdf, overlaps), axis=1)
-
-    Args:
-        row (gpd.GeoSeries): the row from pandas apply
-        gdf (gpd.GeoDataFrame): the geodataframe on which the operation is performed
-        overlaps (DataFrame): the boolean overlap table
-
-    Raises:
-        ValueError: in case areas are exactly equal
-
-    Returns:
-        gpd.GeoSeries: the row with overlaps removed or not
-    """
-    ovrlap_idx = np.where(overlaps.loc[row.name].values == True)[0].tolist()
-    for idx in ovrlap_idx:
-        geom = gdf.iloc[idx].geometry
-        if row.geometry.area > geom.area:
-            row["geometry"] = row["geometry"].difference(geom)
-        elif row.geometry.area == geom.area:
-            raise ValueError(f"Equal area overlap between {row.name} and {idx} - unhandled")
-    return row
-
-
-def has_overlap(gdf: gpd.GeoDataFrame) -> DataFrame:
-    """Check for spatial overlaps across rows
-
-    Args:
-        gdf (gpd.GeoDataFrame): the geodataframe to check
-
-    Returns:
-        DataFrame: Index x Index boolean dataframe
-    """
-    return gdf.apply(
-        lambda row: gdf[gdf.index != row.name].geometry.apply(
-            lambda geom: row.geometry.intersects(geom)
-        ),
-        axis=1,
-    )
-
-
-def remove_overlaps(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-    """Remove inter row overlaps from a GeoDataFrame, cutting out the smaller region from the larger one
-
-    Args:
-        gdf (gpd.GeoDataFrame): the geodataframe to be treated
-
-    Returns:
-        gpd.GeoDataFrame: the treated geodataframe
-    """
-    overlaps = has_overlap(gdf)
-    return gdf.apply(cut_smaller_from_larger, args=(gdf, overlaps), axis=1)
-
-
-def eez_by_region(
-    eez: gpd.GeoDataFrame,
-    province_shapes: gpd.GeoDataFrame,
-    prov_key="region",
-    simplify_tol=0.5,
-) -> gpd.GeoDataFrame:
-    """Break up the eez by admin1 regions based on voronoi polygons of the centroids
-
-    Args:
-        eez (gpd.GeoDataFrame): _description_
-        province_shapes (gpd.GeoDataFrame): _description_
-        prov_key (str, optional): name of the provinces col in province_shapes. Defaults to "region".
-        simplify_tol (float, optional): tolerance for simplifying the voronoi polygons. Defaults to 0.5.
-
-    Returns:
-        gpd.GeoDataFrame: _description_
-    """
-    # generate voronoi cells (more than one per province & can overlap)
-    voronois_simple = gpd.GeoDataFrame(
-        geometry=province_shapes.simplify(tolerance=simplify_tol).voronoi_polygons(),
-        crs=province_shapes.crs,
-    )
-    # assign region
-    prov_voronoi = (
-        voronois_simple.sjoin(province_shapes, predicate="intersects")
-        .groupby(prov_key)
-        .apply(lambda x: x.union_all("unary"))
-    )
-    prov_voronoi = gpd.GeoDataFrame(
-        geometry=prov_voronoi.values,
-        crs=province_shapes.crs,
-        data={prov_key: prov_voronoi.index},
-    )
-
-    # remove overlaps
-    gdf_ = remove_overlaps(prov_voronoi.set_index(prov_key))
-
-    eez_prov = (
-        gdf_.reset_index()
-        .overlay(eez, how="intersection")[[prov_key, "geometry"]]
-        .groupby(prov_key)
-        .apply(lambda x: x.union_all("unary"))
-    )
-    eez_prov = gpd.GeoDataFrame(
-        geometry=eez_prov.values,
-        crs=province_shapes.crs,
-        data={prov_key: eez_prov.index},
-    )
-
-    return eez_prov[eez_prov[prov_key].isin(OFFSHORE_WIND_NODES)].set_index(prov_key)
-
 
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
@@ -440,11 +254,6 @@ if __name__ == "__main__":
     # TODO it would be better to filter by set regions after making the voronoi polygons
     regions = fetch_province_shapes()
     prefectures = fetch_prefecture_shapes()
-    # nodes = build_nodes(prefectures, nodes_config)
-    # nodes.simplify(tol["land"]).to_file(
-    #     snakemake.output.province_shapes.replace(".geojson", "_nodestest.geojson"),
-    #     driver="GeoJSON",
-    # )
 
 
     regions.to_file(snakemake.output.province_shapes, driver="GeoJSON")
@@ -455,8 +264,9 @@ if __name__ == "__main__":
     eez_country = fetch_maritime_eez(EEZ_PREFIX)
 
     logger.info("Breaking by reion")
-    eez_by_region(eez_country, regions, prov_key="province", simplify_tol=tol["eez"]).to_file(
-        snakemake.output.offshore_shapes, driver="GeoJSON"
-    )
+    eez_country = eez_country.to_file(snakemake.output.offshore_shapes, driver="GeoJSON")
+    # eez_by_region(eez_country, regions, prov_key="province", simplify_tol=tol["eez"]).to_file(
+    #     snakemake.output.offshore_shapes, driver="GeoJSON"
+    # )
 
     logger.info("Regions succesfully built")
