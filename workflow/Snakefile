@@ -176,6 +176,8 @@ rule build_shapes:
     script:
         "scripts/build_shapes.py"
 
+
+# TODO this is fast so we could build all base networks for all years in one rule, save slurm jobs
 rule base_network:
     """Base Network with buses & edges.
     This is at Admin l2 resolution and not at substation resolution, the assumption
@@ -322,6 +324,25 @@ rule build_renewable_profiles:
         technology="(?!hydro).*",  # Any technology other than hydro
     script:
         "scripts/build_renewable_profiles.py"
+
+
+rule build_electricity_demand:
+    """build the electricity demand at provincial and base network level"""
+    params:
+        config = config,
+        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
+    input:
+        population = DERIVED_COMMON + "/population/population.h5",
+        gdp = DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
+        population_map = DERIVED_COMMON + "/population/population_gridcell_map.h5",
+        province_codes = "resources/data/regions/province_codes.csv",
+        hrly_regional_ac_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
+    output:
+        provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
+        base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.h5",
+    script:
+        "scripts/build_elec_demand.py"
+
 
 # # TODO check whether energy totals still needed
 rule build_load_profiles:
