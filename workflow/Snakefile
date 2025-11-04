@@ -101,60 +101,25 @@ if config['enable'].get('build_cutout', False):
         script: "scripts/build_cutout.py"
 
 
-rule build_population:
-    # https://www.stats.gov.cn/sj/ndsj/2023/indexeh.htm
-    params:
-        population_year = 2022,
-        pop_conversion = 1e4, # YEARBOOK_DATA2POP
-    input:
-        population="resources/data/population/population_from_national_data.csv"
-    output:
-        population=DERIVED_COMMON+"/"+"population/population.h5"
-    threads: 1
-    resources: mem_mb=1000
-    log: LOGS_COMMON + "/build_population.log"
-    script: "scripts/build_population.py"
-
-
-rule build_population_gridcell_map:
-    params:
-        config=config
-    input:
-        cutout=CUTOUT_PATH,
-        province_populations=DERIVED_COMMON+"/population/population.h5",
-        population_density_grid="resources/data/population/pop_density_china.nc",
-        # TODO directly link to output of fetch region shapes
-        # admin 1 level = first administrative level within country
-        province_shape="resources/data/province_shapes/CHN_adm1.shp",
-    output:
-        population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5"
-    log: LOGS_COMMON+"/build_population_gridcell_map.log"
-    threads: 1
-    resources: mem_mb=35000
-    script: "scripts/build_population_gridcell_map.py"
-
-
 pop_raster = name = "-".join([str(v) for v in config["world_population_raster"].values()])
 rule build_population_layouts:
     params:
         pop_year = 2022, # for urban and province, for gridded see fetch
         pop_conversion = 1e4, # conversion for province_populations
+        coarsen_pop_by = 3, # save space and memory
     input:
         province_populations="resources/data/population/population_from_national_data.csv",
         population_gridded=f"resources/data/population/china_world_pop_{name}.tif",
         province_shape="resources/data/regions/provinces_onshore.geojson",
+        admin_l2_shape = "resources/data/regions/admin2_shapes.geojson",
         urban_percent="resources/data/population/china_urban_population_proportion_2013_2022.csv",
-        # cutout=CUTOUT_PATH,
     output:
-        pop_layout_total=DERIVED_COMMON + "pop_layout_total.nc",
-        pop_layout_urban=DERIVED_COMMON + "pop_layout_urban.nc",
-        pop_layout_rural=DERIVED_COMMON + "pop_layout_rural.nc",
-    log:
-        LOGS_COMMON + "build_population_layouts.log",
-    resources:
-        mem_mb=20000,
+        pop_layouts=DERIVED_COMMON + "/population/pop_layout.nc",
+        admin2_population=DERIVED_COMMON + "/population/pop_distributions.csv",
+    # log:
+    #     LOGS_COMMON + "/build_population_layouts.log",
     script:
-        "../scripts/build_population_provinces.py"
+        "scripts/build_population_layouts.py"
 
 
 rule build_shapes:
@@ -235,10 +200,12 @@ rule build_powerplants:
     threads: 2 #TODO 1?
     script: "scripts/build_powerplants.py"
 
+
 # TODO find a way to turn off if heat coupling is off 
 rule build_solar_thermal_profiles:
     input:
         cutout=CUTOUT_PATH,
+        # TODO change to new population
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5"
     output:
         profile_solar_thermal = DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5"
@@ -250,6 +217,7 @@ rule build_solar_thermal_profiles:
 rule build_temperature_profiles:
     params:
         nodes = config["nodes"],
+    # TODO change to new population
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
         cutout=CUTOUT_PATH
@@ -263,6 +231,7 @@ rule build_temperature_profiles:
 rule build_cop_profiles:
     params:
         nodes = config["nodes"],
+    # TODO change to new population
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
         cutout=CUTOUT_PATH,
@@ -273,6 +242,7 @@ rule build_cop_profiles:
     # resources: mem_mb=30000
     log: LOGS_COMMON + "/build_cop_profiles.log"
     script: "scripts/build_cop_profiles.py"
+
 
 rasters = ["Build_up", "Grass", "Bare", "Shrubland"]
 rule build_availability_matrix:
@@ -329,17 +299,19 @@ rule build_renewable_profiles:
 rule build_electricity_demand:
     """build the electricity demand at provincial and base network level"""
     params:
+        # data_year=2018,
+        distribution_key = {"gdp":0.6, "pop":0.4},
         config = config,
         elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
     input:
-        population = DERIVED_COMMON + "/population/population.h5",
         gdp = DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
-        population_map = DERIVED_COMMON + "/population/population_gridcell_map.h5",
+        population = DERIVED_COMMON + "/population/pop_distributions.csv",
         province_codes = "resources/data/regions/province_codes.csv",
-        hrly_regional_ac_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
+        hrly_regional_elec_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
     output:
         provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
         base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.h5",
+    log: LOG_DIR + "/build_elec_demand.log"
     script:
         "scripts/build_elec_demand.py"
 
