@@ -1,0 +1,345 @@
+# adapted from yang et al https://www.nature.com/articles/s41597-024-03529-0#Sec13 data in 1e8 Yuan
+year,NL_NAME_2,NAME_2,NAME_1,gdp_l2
+2018,安庆市,Anqing,Anhui,1801.84
+2018,蚌埠市,Bengbu,Anhui,1603.32
+2018,亳州市,Bozhou,Anhui,1180.21
+2018,池州市,Chizhou,Anhui,633.8
+2018,滁州市,Chuzhou,Anhui,1681.84
+2018,阜阳市,Fuyang,Anhui,1661.83
+2018,合肥市,Hefei,Anhui,7269.93
+2018,淮北市,Huaibei,Anhui,940.13
+2018,淮南市,Huainan,Anhui,1197.1
+2018,黄山市,Huangshan,Anhui,622.98
+2018,六安市,Lu'an,Anhui,1189.33
+2018,马鞍山市,Maanshan,Anhui,1801.72
+2018,宿州市,Suzhou,Anhui,1533.02
+2018,铜陵市,Tongling,Anhui,1157.86
+2018,芜湖市,Wuhu,Anhui,3107.26
+2018,宣城市,Xuancheng,Anhui,1227.35
+2018,北京|北京,Beijing,Beijing,33106.0
+2018,重慶|重庆,Chongqing,Chongqing,21588.8
+2018,福州市,Fuzhou,Fujian,7865.34
+2018,龙岩市,Longyan,Fujian,2393.3
+2018,南平市,Nanping,Fujian,1792.52
+2018,宁德市,Ningde,Fujian,1943.45
+2018,莆田市,Putian,Fujian,2248.25
+2018,泉州市,Quanzhou,Fujian,8469.87
+2018,三明市,Sanming,Fujian,2353.64
+2018,厦门市,Xiamen,Fujian,4791.41
+2018,漳州市,Zhangzhou,Fujian,3947.67
+2018,白银市,Baiyin,Gansu,511.999
+2018,定西市,Dingxi,Gansu,356.261
+2018,甘南藏族自治州,Gannan Tibetan,Gansu,155.727
+2018,嘉峪关市,Jiayuguan,Gansu,299.62
+2018,金昌市,Jinchang,Gansu,264.823
+2018,酒泉市,Jiuquan,Gansu,597.324
+2018,兰州市,Lanzhou,Gansu,2661.92
+2018,临夏回族自治州,Linxia Hui,Gansu,255.349
+2018,陇南市,Longnan,Gansu,379.227
+2018,平凉市,Pingliang,Gansu,395.165
+2018,庆阳市,Qingyang,Gansu,722.584
+2018,天水市,Tianshui,Gansu,659.081
+2018,武威市,Wuwei,Gansu,470.63
+2018,张掖市,Zhangye,Gansu,408.749
+2018,潮州市,Chaozhou,Guangdong,1067.28
+2018,东莞市,Dongguan,Guangdong,8285.12
+2018,佛山市,Foshan,Guangdong,9938.2
+2018,广州市,Guangzhou,Guangdong,21042.0
+2018,河源市,Heyuan,Guangdong,1006.25
+2018,惠州市,Huizhou,Guangdong,4104.11
+2018,江门市,Jiangmen,Guangdong,2900.84
+2018,揭阳市,Jieyang,Guangdong,1902.09
+2018,茂名市,Maoming,Guangdong,3093.34
+2018,梅州市,Meizhou,Guangdong,1111.36
+2018,清远市,Qingyuan,Guangdong,1581.61
+2018,汕头市,Shantou,Guangdong,2512.99
+2018,汕尾市,Shanwei,Guangdong,921.701
+2018,韶关市,Shaoguan,Guangdong,1344.86
+2018,深圳市,Shenzhen,Guangdong,25248.2
+2018,阳江市,Yangjiang,Guangdong,1167.73
+2018,云浮市,Yunfu,Guangdong,864.84
+2018,湛江市,Zhanjiang,Guangdong,3016.73
+2018,肇庆市,Zhaoqing,Guangdong,2203.12
+2018,中山市,Zhongshan,Guangdong,3633.53
+2018,珠海市,Zhuhai,Guangdong,2943.81
+2018,百色市,Baise,Guangxi,1176.77
+2018,北海市,Beihai,Guangxi,1213.3
+2018,崇左市,Chongzuo,Guangxi,1016.49
+2018,防城港市,Fangchenggang,Guangxi,696.818
+2018,贵港市,Guigang,Guangxi,1169.88
+2018,桂林市,Guilin,Guangxi,2003.61
+2018,河池市,Hechi,Guangxi,788.3
+2018,贺州市,Hezhou,Guangxi,602.63
+2018,来宾市,Laibin,Guangxi,692.411
+2018,柳州市,Liuzhou,Guangxi,3053.65
+2018,南宁市,Nanning,Guangxi,4162.37
+2018,钦州市,Qinzhou,Guangxi,1291.96
+2018,梧州市,Wuzhou,Guangxi,1029.85
+2018,玉林市,Yulin,Guangxi,1615.46
+2018,安顺市,Anshun,Guizhou,849.4
+2018,毕节地区,Bijie,Guizhou,1921.43
+2018,贵阳市,Guiyang,Guizhou,3724.97
+2018,六盘水市,Liupanshui,Guizhou,1525.69
+2018,黔东南苗族侗族自治州,Qiandongnan Miao and Dong,Guizhou,1036.62
+2018,黔南布依族苗族自治州,Qiannan Buyei and Miao,Guizhou,1313.46
+2018,黔西南布依族苗族自治州,Qianxinan Buyei and Miao,Guizhou,1163.77
+2018,铜仁地区,Tongren,Guizhou,1066.52
+2018,遵义市,Zunyi,Guizhou,3000.23
+2018,海口市,Haikou,Hainan,1535.55
+2018,海南,Danzhou,Hainan,322.97
+2018,三亚市,Sanya,Hainan,595.51
+2018,保定市,Baoding,Hebei,3070.9
+2018,沧州市,Cangzhou,Hebei,3676.4
+2018,承德市,Chengde,Hebei,1481.5
+2018,邯郸市,Handan,Hebei,3454.6
+2018,衡水市,Hengshui,Hebei,1558.7
+2018,廊坊市,Langfang,Hebei,3108.3
+2018,秦皇岛市,Qinhuangdao,Hebei,1507.33
+2018,石家庄市,Shijiazhuang,Hebei,6082.62
+2018,唐山市,Tangshan,Hebei,6955.0
+2018,邢台市,Xingtai,Hebei,2150.8
+2018,张家口市,Zhangjiakou,Hebei,1536.6
+2018,张家口市,Zhangjiakou,Hebei,1536.62
+2018,大庆市,Daqing,Heilongjiang,2801.2
+2018,大兴安岭地区,Daxing'anling,Heilongjiang,128.9
+2018,哈尔滨市,Harbin,Heilongjiang,6300.5
+2018,鹤岗市,Hegang,Heilongjiang,289.6
+2018,黑河市,Heihe,Heilongjiang,505.1
+2018,佳木斯市,Jiamusi,Heilongjiang,1012.1
+2018,鸡西市,Jixi,Heilongjiang,535.2
+2018,牡丹江市,Mudanjiang,Heilongjiang,1302.6
+2018,齐齐哈尔市,Qiqihar,Heilongjiang,1340.2
+2018,七台河市,Qitaihe,Heilongjiang,250.3
+2018,双鸭山市,Shuangyashan,Heilongjiang,507.0
+2018,绥化市,Suihua,Heilongjiang,1359.6
+2018,伊春市,Yichun,Heilongjiang,274.2
+2018,安阳市,Anyang,Henan,2273.83
+2018,鹤壁市,Hebi,Henan,872.092
+2018,焦作市,Jiaozuo,Henan,2381.14
+2018,济源市,Jiyuan shi,Henan,641.83
+2018,开封市,Kaifeng,Henan,2108.37
+2018,漯河市,Luohe,Henan,1172.22
+2018,洛阳市,Luoyang,Henan,4620.89
+2018,南阳市,Nanyang,Henan,3502.71
+2018,平顶山市,Pingdingshan,Henan,2174.27
+2018,濮阳市,Puyang,Henan,1654.47
+2018,三门峡市,Sanmenxia,Henan,1528.12
+2018,商丘市,Shangqiu,Henan,2389.04
+2018,新乡市,Xinxiang,Henan,2673.71
+2018,信阳市,Xinyang,Henan,2442.74
+2018,许昌市,Xuchang,Henan,2830.62
+2018,郑州市,Zhengzhou,Henan,10670.1
+2018,周口市,Zhoukou,Henan,2779.82
+2018,驻马店市,Zhumadian,Henan,2488.36
+2018,恩施土家族苗族自治州,Enshi Tujia and Miao,Hubei,870.95
+2018,鄂州市,Ezhou,Hubei,1005.3
+2018,黄冈市,Huanggang,Hubei,2035.2
+2018,黄石市,Huangshi,Hubei,1587.33
+2018,荆门市,Jingmen,Hubei,1847.89
+2018,荆州市,Jingzhou,Hubei,2082.18
+2018,潜江市,Qianjiang,Hubei,755.78
+2018,神农架林区,Shennongjia,Hubei,25.6
+2018,十堰市,Shiyan,Hubei,1747.82
+2018,随州市,Suizhou Shi,Hubei,1011.19
+2018,天门市,Tianmen,Hubei,591.15
+2018,武汉市,Wuhan,Hubei,14928.7
+2018,襄樊市,Xiangfan,Hubei,4309.79
+2018,咸宁市,Xianning,Hubei,1362.42
+2018,仙桃市,Xiantao,Hubei,800.13
+2018,孝感市,Xiaogan,Hubei,1912.9
+2018,宜昌市,Yichang,Hubei,4064.18
+2018,常德市|常德市,Changde,Hunan,3394.21
+2018,长沙市|長沙市,Changsha,Hunan,10405.6
+2018,郴州市|郴州市,Chenzhou,Hunan,2391.88
+2018,衡阳市|衡陽市,Hengyang,Hunan,3046.03
+2018,怀化市|懷化市,Huaihua,Hunan,1513.27
+2018,娄底市|婁底市,Loudi,Hunan,1540.42
+2018,邵阳市|邵陽市,Shaoyang,Hunan,1782.66
+2018,湘潭市|湘潭市,Xiangtan,Hunan,2161.36
+2018,湘西土家族苗族自治州|湘西土家族苗族自治州,Xiangxi Tujia and Miao,Hunan,605.06
+2018,益阳市|益陽市,Yiyang,Hunan,1758.38
+2018,永州市|永州市,Yongzhou,Hunan,1805.65
+2018,岳阳市|岳陽市,Yueyang,Hunan,3411.01
+2018,张家界市|張家界市,Zhangjiajie,Hunan,578.92
+2018,株洲市|株洲市,Zhuzhou,Hunan,2631.54
+2018,阿拉善盟,Alxa,InnerMongolia,283.3
+2018,包头市,Baotou,InnerMongolia,2951.79
+2018,巴彦淖尔市,Baynnur,InnerMongolia,891.866
+2018,赤峰市,Chifeng,InnerMongolia,1549.84
+2018,呼和浩特市,Hohhot,InnerMongolia,2903.5
+2018,呼伦贝尔市,Hulunbuir,InnerMongolia,1252.9
+2018,鄂尔多斯市,Ordos,InnerMongolia,3763.21
+2018,通辽市,Tongliao,InnerMongolia,1301.6
+2018,乌兰察布市,Ulaan Chab,InnerMongolia,764.52
+2018,乌海市,Wuhai,InnerMongolia,495.94
+2018,锡林郭勒盟,Xilin Gol,InnerMongolia,813.9
+2018,兴安盟,Xing'an,InnerMongolia,517.165
+2018,常州市,Changzhou,Jiangsu,7050.96
+2018,淮安市,Huai'an,Jiangsu,3602.54
+2018,连云港市,Lianyungang,Jiangsu,2771.7
+2018,南京市,Nanjing,Jiangsu,13009.2
+2018,南通市,Nantong,Jiangsu,8429.77
+2018,宿迁市,Suqian,Jiangsu,2751.16
+2018,苏州市,Suzhou,Jiangsu,18599.1
+2018,泰州市,Taizhou,Jiangsu,5109.32
+2018,无锡市,Wuxi,Jiangsu,11439.3
+2018,徐州市,Xuzhou,Jiangsu,6757.79
+2018,盐城市,Yancheng,Jiangsu,5489.98
+2018,扬州市,Yangzhou,Jiangsu,5466.87
+2018,镇江市,Zhenjiang,Jiangsu,4050.0
+2018,抚州市,Fuzhou,Jiangxi,1382.4
+2018,赣州市,Ganzhou,Jiangxi,2807.24
+2018,吉安市,Ji'an,Jiangxi,1742.23
+2018,景德镇市,Jingdezhen,Jiangxi,846.6
+2018,九江市,Jiujiang,Jiangxi,2700.19
+2018,南昌市,Nanchang,Jiangxi,5119.33
+2018,萍乡市,Pingxiang,Jiangxi,1009.05
+2018,上饶市,Shangrao,Jiangxi,2212.8
+2018,新余市,Xinyu,Jiangxi,1027.34
+2018,宜春市,Yichun,Jiangxi,2180.85
+2018,鹰潭市,Yingtan,Jiangxi,818.98
+2018,白城市,Baicheng,Jilin,606.51
+2018,白山市,Baishan,Jilin,661.72
+2018,长春市,Changchun,Jilin,7175.71
+2018,吉林市,Jilin,Jilin,2210.23
+2018,辽源市,Liaoyuan,Jilin,621.6
+2018,四平市,Siping,Jilin,944.32
+2018,松原市,Songyuan,Jilin,1373.6
+2018,通化市,Tonghua,Jilin,829.3
+2018,延边朝鲜族自治州,Yanbian Korean,Jilin,709.5
+2018,鞍山市,Anshan,Liaoning,1751.06
+2018,本溪市,Benxi,Liaoning,823.087
+2018,朝阳市,Chaoyang,Liaoning,831.43
+2018,大连市,Dalian,Liaoning,7668.48
+2018,丹东市,Dandong,Liaoning,816.739
+2018,抚顺市,Fushun,Liaoning,1048.82
+2018,阜新市,Fuxin,Liaoning,445.991
+2018,葫芦岛市,Huludao,Liaoning,812.784
+2018,锦州市,Jinzhou,Liaoning,1192.41
+2018,辽阳市,Liaoyang,Liaoning,869.726
+2018,盘锦市,Panjin,Liaoning,1216.58
+2018,沈阳市,Shenyang,Liaoning,6101.92
+2018,铁岭市,Tieling,Liaoning,616.619
+2018,固原市,Guyuan,Ningxia,303.194
+2018,石嘴山市,Shizuishan,Ningxia,605.92
+2018,吴忠市,Wuzhong,Ningxia,534.53
+2018,银川市,Yinchuan,Ningxia,1777.22
+2018,中卫市,Zhongwei,Ningxia,402.995
+2018,果洛藏族自治州,Golog Tibetan,Qinghai,41.45
+2018,玉树藏族自治州,Gyêgu Tibetan,Qinghai,53.61
+2018,海北藏族自治州,Haibei Tibetan,Qinghai,83.53
+2018,海东地区,Haidong,Qinghai,451.46
+2018,海南藏族自治州,Hainan Tibetan,Qinghai,158.18
+2018,海西蒙古族藏族自治州,Haixi Mongol and Tibetan,Qinghai,625.27
+2018,黄南藏族自治州,Huangnan Tibetan,Qinghai,88.33
+2018,西宁市,Xining,Qinghai,1286.41
+2018,安康市,Ankang,Shaanxi,1065.16
+2018,宝鸡市,Baoji,Shaanxi,2110.95
+2018,汉中市,Hanzhong,Shaanxi,1429.47
+2018,商洛市,Shangluo,Shaanxi,775.33
+2018,铜川市,Tongchuan,Shaanxi,331.92
+2018,渭南市,Weinan,Shaanxi,1724.33
+2018,西安市,Xi'an,Shaanxi,8499.4
+2018,咸阳市,Xianyang,Shaanxi,2135.45
+2018,延安市,Yan'an,Shaanxi,1555.33
+2018,榆林市,Yulin,Shaanxi,3818.27
+2018,滨州,Binzhou,Shandong,2640.52
+2018,德州市,Dezhou,Shandong,3380.3
+2018,东营市,Dongying,Shandong,4152.47
+2018,菏泽市,Heze,Shandong,3078.78
+2018,济南市,Jinan,Shandong,7856.56
+2018,济宁市,Jining,Shandong,4930.58
+2018,聊城市,Liaocheng,Shandong,3152.15
+2018,临沂市,Linyi,Shandong,4717.8
+2018,青岛市,Qingdao,Shandong,10949.4
+2018,日照市,Rizhao,Shandong,2202.17
+2018,泰安市,Tai'an,Shandong,3651.53
+2018,潍坊市,Weifang,Shandong,6156.78
+2018,威海市,Weihai,Shandong,3641.48
+2018,烟台市,Yantai,Shandong,7832.58
+2018,枣庄市,Zaozhuang,Shandong,2402.38
+2018,淄博市,Zibo,Shandong,5068.35
+2018,上海|上海,Shanghai,Shanghai,36011.82
+2018,长治市,Changzhi,Shanxi,1645.63
+2018,大同市,Datong,Shanxi,1271.96
+2018,晋城市,Jincheng,Shanxi,1351.85
+2018,晋中市,Jinzhong,Shanxi,1447.61
+2018,临汾市,Linfen,Shanxi,1440.04
+2018,吕梁市,Luliang,Shanxi,1420.32
+2018,朔州市,Shuozhou,Shanxi,1065.63
+2018,太原市,Taiyuan,Shanxi,3884.48
+2018,忻州市,Xinzhou,Shanxi,989.13
+2018,阳泉市,Yangquan,Shanxi,733.69
+2018,运城县,Yuncheng,Shanxi,1509.64
+2018,巴中市,Bazhong,Sichuan,645.88
+2018,成都市,Chengdu,Sichuan,15698.9
+2018,达州市,Dazhou,Sichuan,1690.17
+2018,德阳市,Deyang,Sichuan,2213.87
+2018,甘孜藏族自治州,Garzê Tibetan,Sichuan,291.2
+2018,广安市,Guang'an,Sichuan,1250.24
+2018,广元市,Guangyuan,Sichuan,801.85
+2018,乐山市,Leshan,Sichuan,1615.09
+2018,凉山彝族自治州,Liangshan Yi,Sichuan,1533.19
+2018,泸州市,Luzhou,Sichuan,1694.97
+2018,眉山市,Meishan,Sichuan,1256.02
+2018,绵阳市,Mianyang,Sichuan,2303.82
+2018,南充市,Nanchong,Sichuan,2006.03
+2018,内江市,Neijiang,Sichuan,1411.75
+2018,内江市,Neijiang,Sichuan,1411.75
+2018,阿坝藏族羌族自治州,Ngawa Tibetan and Qiang,Sichuan,306.67
+2018,攀枝花市,Panzhihua,Sichuan,1173.52
+2018,遂宁市,Suining,Sichuan,1221.39
+2018,雅安市,Ya'an,Sichuan,646.1
+2018,宜宾市,Yibin,Sichuan,2026.37
+2018,自贡市,Zigong,Sichuan,1406.71
+2018,资阳市,Ziyang,Sichuan,1066.53
+2018,天津|天津,Tianjin,Tianjin,18809.64
+2018,昌都地区,Chamdo,Tibet,200.56
+2018,拉萨市,Lhasa,Tibet,567.1
+2018,那曲地区,Nagchu,Tibet,142.1
+2018,阿里地区,Ngari,Tibet,55.61
+2018,林芝地区,Nyingtri,Tibet,157.37
+2018,山南地区,Shannan,Tibet,172.11
+2018,日喀则地区,Shigatse,Tibet,253.54
+2018,阿克苏地区,Aksu,Xinjiang,1027.43
+2018,阿勒泰地区,Altay,Xinjiang,284.09
+2018,巴音郭愣蒙古自治州,Bayin'gholin Mongol,Xinjiang,1038.9
+2018,博尔塔拉蒙古自治州,Börtala Mongol,Xinjiang,330.335
+2018,昌吉回族自治州,Changji Hui,Xinjiang,1367.3
+2018,哈密地区,Hami,Xinjiang,536.609
+2018,伊犁哈萨克自治州,Ili Kazakh,Xinjiang,939.85
+2018,克拉玛依市,Karamay,Xinjiang,986.807
+2018,喀什地区,Kashgar,Xinjiang,885.117
+2018,和田地区,Khotan,Xinjiang,305.569
+2018,克孜勒苏柯尔克孜自治州,Kizilsu Kirghiz,Xinjiang,128.892
+2018,石河子市,Shihezi,Xinjiang,548.51
+2018,塔城地区,Tacheng,Xinjiang,693.27
+2018,吐鲁番地区,Turfan,Xinjiang,317.733
+2018,乌鲁木齐市,Urumqi,Xinjiang,3099.76
+2018,保山市,Baoshan,Yunnan,738.36
+2018,楚雄彝族自治州,Chuxiong Yi,Yunnan,1024.71
+2018,大理白族自治州,Dali Bai,Yunnan,1122.89
+2018,德宏傣族景颇族自治州,Dehong Dai and Jingpo,Yunnan,381.12
+2018,迪庆藏族自治州,Dêqên Tibetan,Yunnan,217.51
+2018,红河哈尼族彝族自治州,Honghe Hani and Yi,Yunnan,1593.99
+2018,昆明市,Kunming,Yunnan,5206.9
+2018,丽江市,Lijiang,Yunnan,350.91
+2018,临沧市,Lincang,Yunnan,630.14
+2018,怒江傈僳族自治州,Nujiang Lisu,Yunnan,161.57
+2018,普洱市,Pu'er,Yunnan,662.53
+2018,曲靖市,Qujing,Yunnan,2014.19
+2018,文山壮族苗族自治州,Wenshan Zhuang and Miao,Yunnan,859.7
+2018,西双版纳傣族自治州,Xishuangbanna Dai,Yunnan,417.91
+2018,玉溪市,Yuxi,Yunnan,1493.57
+2018,昭通市,Zhaotong,Yunnan,889.64
+2018,杭州市,Hangzhou,Zhejiang,13509.2
+2018,湖州市,Huzhou,Zhejiang,2719.07
+2018,嘉兴市,Jiaxing,Zhejiang,4871.98
+2018,金华市,Jinhua,Zhejiang,4100.23
+2018,丽水市,Lishui,Zhejiang,1394.67
+2018,宁波市,Ningbo,Zhejiang,10745.5
+2018,衢州市,Quzhou,Zhejiang,1470.58
+2018,绍兴市,Shaoxing,Zhejiang,5416.9
+2018,台州市,Taizhou,Zhejiang,4874.67
+2018,温州市,Wenzhou,Zhejiang,6006.16
+2018,舟山市,Zhoushan,Zhejiang,1316.7
