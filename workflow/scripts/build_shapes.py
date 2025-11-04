@@ -158,11 +158,13 @@ if __name__ == "__main__":
 
     simplify_tol = snakemake.params["simplify_tol"].get("eez", 0.1)
     eez_country = gpd.read_file(snakemake.input.offshore_shapes)
-    regions = gpd.read_file(snakemake.input.admin_l2_shapes)
+    exclude = snakemake.params["node_config"].get("exclude_provinces", [])
+    regions = read_admin2_shapes(snakemake.input.admin_l2_shapes, fix = True, exclude=exclude)
     province_shapes = gpd.read_file(snakemake.input.province_shapes).rename(
         columns={"province": L1_KEY}
     )
     gdps = pd.read_csv(snakemake.input.gdp, skiprows=1)
+
     gdp_regions = merge_w_admin_l2(gdps, regions, data_col="gdp_l2")
 
     regions_offshore = split_eez_by_region(
@@ -181,3 +183,5 @@ if __name__ == "__main__":
     gdp_regions.to_file(
         snakemake.output.regions_w_gdp, driver="GeoJSON"
     )
+
+    logger.info("Successfully built shapes")

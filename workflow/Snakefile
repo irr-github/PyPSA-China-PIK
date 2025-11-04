@@ -91,8 +91,8 @@ if config['enable'].get('build_cutout', False):
         params:
             config=config
         input:
-            regions_onshore="resources/data/regions/regions_onshore.geojson",
-            regions_offshore="resources/data/regions/regions_offshore.geojson"
+            regions_onshore="regions_onshore/dataregions/regions_onshore.geojson",
+            regions_offshore="regions_offshore/dataregions/regions_offshore.geojson",
         output: CUTOUT_PATH,
         log: LOGS_COMMON + f"/build_cutout/{CUTOUT_NAME}.log"
         benchmark: f"benchmarks/build_cutout_{CUTOUT_NAME}"
@@ -102,11 +102,11 @@ if config['enable'].get('build_cutout', False):
 
 
 rule build_population:
+    # https://www.stats.gov.cn/sj/ndsj/2023/indexeh.htm
     params:
         population_year = 2022,
         pop_conversion = 1e4, # YEARBOOK_DATA2POP
     input:
-        # https://www.stats.gov.cn/sj/ndsj/2023/indexeh.htm
         population="resources/data/population/population_from_national_data.csv"
     output:
         population=DERIVED_COMMON+"/"+"population/population.h5"
@@ -142,9 +142,9 @@ rule build_population_layouts:
     input:
         province_populations="resources/data/population/population_from_national_data.csv",
         population_gridded=f"resources/data/population/china_world_pop_{name}.tif",
-        province_shape=DERIVED_COMMON + "/regions/provinces_onshore.geojson",
+        province_shape="resources/data/regions/provinces_onshore.geojson",
         urban_percent="resources/data/population/china_urban_population_proportion_2013_2022.csv",
-        cutout=CUTOUT_PATH,
+        # cutout=CUTOUT_PATH,
     output:
         pop_layout_total=DERIVED_COMMON + "pop_layout_total.nc",
         pop_layout_urban=DERIVED_COMMON + "pop_layout_urban.nc",
@@ -153,13 +153,68 @@ rule build_population_layouts:
         LOGS_COMMON + "build_population_layouts.log",
     resources:
         mem_mb=20000,
-    benchmark: "build_population_layouts"
-    threads: 8
-    conda:
-        "../envs/environment.yaml"
     script:
         "../scripts/build_population_provinces.py"
 
+
+rule build_shapes:
+    params:
+        simplify_tol = config["fetch_regions"]["simplify_tol"],
+        node_config = config["nodes"],
+        # TODO use , move to settings
+        offshore_provinces = [ "Fujian", "Guangdong", "Guangxi", "Hainan", "Hebei", "Jiangsu", "Liaoning", "Shandong", "Shanghai", "Tianjin", "Zhejiang",]
+    input:
+        province_shapes="resources/data/regions/provinces_onshore.geojson",
+        admin_l2_shapes="resources/data/regions/admin2_shapes.geojson",
+        offshore_shapes="resources/data/regions/country_offshore.geojson",
+        gdp = "resources/data/population/admin_l2_yang_et_al_corrected_gdp_2018.csv",
+    output:
+        offshore_shapes=DERIVED_COMMON + "/regions/regions_offshore.geojson",
+        regions_w_gdp=DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
+    log:
+        LOGS_COMMON + "/build_shapes.log",
+    script:
+        "scripts/build_shapes.py"
+
+rule base_network:
+    """Base Network with buses & edges.
+    This is at Admin l2 resolution and not at substation resolution, the assumption
+    is that each admin l2 population center has a substation
+    FOR NOW take the admin2 centroid as bus location -> could switch to highest density point"""
+    params:
+        snapshots=config["snapshots"],
+        drop_leap_day=True, # False will raise NotImplemented error
+        lines_path="resources/data/grids/gem_uhv_with_admin2.csv",
+        node_config = config["nodes"],
+        line_margin = config["security"].get("line_security_margin", 70) / 100,
+    input:
+        province_shapes="resources/data/regions/provinces_onshore.geojson",
+        admin_l2_shapes ="resources/data/regions/admin2_shapes.geojson",
+        offshore_shapes=DERIVED_COMMON + "/regions/regions_offshore.geojson",
+    output:
+        base_network=RESULTS_DIR + "/networks/base_{planning_horizons}.nc",
+    script:
+        "scripts/base_network_l2.py"
+
+# rule build_clustered_population_layouts:
+#     input:
+#         pop_layout_total=resources("pop_layout_total.nc"),
+#         pop_layout_urban=resources("pop_layout_urban.nc"),
+#         pop_layout_rural=resources("pop_layout_rural.nc"),
+#         regions(data"regions_onshore_base_s_{clusters}.geojson"),
+#         cutout=lambda w: input_cutout(w),
+#     output:
+#         clustered_pop_layout=resources("pop_layout_base_s_{clusters}.csv"),
+#     log:
+#         logs("build_clustered_population_layouts_s_{clusters}.log"),
+#     resources:
+#         mem_mb=10000,
+#     benchmark:
+#         benchmarks("build_clustered_population_layouts/s_{clusters}")
+#     conda:
+#         "../envs/environment.yaml"
+#     script:
+#         "../scripts/build_clustered_population_layouts.py"
 
 # TODO merge all techs into a single csv
 # TODO add node wildcard/id
@@ -171,7 +226,7 @@ rule build_powerplants:
         gem = config["global_energy_monitor_plants"],
     input:
         GEM_plant_tracker="resources/data/existing_infrastructure/gem_data_raw/Global-integrated-Plant-Tracker-July-2025_china.xlsx",
-        nodes=DERIVED_COMMON + "/regions/provinces_onshore.geojson",
+        nodes="resources/data/regions/provinces_onshore.geojson",
     output:
         **{tech : DERIVED_COMMON + f"/existing_infrastructure/{tech}_capacity.csv" for tech in brownfield_techs},
     log: LOGS_COMMON + "/build_powerplants.log"
@@ -188,7 +243,7 @@ rule build_solar_thermal_profiles:
     log: LOGS_COMMON + "/build_solar_thermal_profiles.log"
     threads: 8
     resources: mem_mb=30000
-    script: "scripts/build_solar_thermal_profiles.py"
+#     script: "scripts/build_solar_thermal_profiles.py"
 
 rule build_temperature_profiles:
     params:
@@ -209,11 +264,11 @@ rule build_cop_profiles:
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
         cutout=CUTOUT_PATH,
-        temperature=DERIVED_CUTOUT + "/heating/temperature.h5"
+        temperature=DERIVED_CUTOUT + "/heating/temperature.h5",
     output:
-        cop= DERIVED_CUTOUT + "/heating/hp_cop.h5"
-    threads: 8
-    resources: mem_mb=30000
+        cop= DERIVED_CUTOUT + "/heating/hp_cop.h5",
+    # threads: 8
+    # resources: mem_mb=30000
     log: LOGS_COMMON + "/build_cop_profiles.log"
     script: "scripts/build_cop_profiles.py"
 
@@ -228,7 +283,7 @@ rule build_availability_matrix:
         # TODO directly link to output of fetch region shapes
         # admin 1 level = first administrative level within country
         province_shape="resources/data/province_shapes/CHN_adm1.shp",
-        offshore_province_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
+        offshore_province_shapes = "resources/data/regions/provinces_offshore.geojson",
         # natural reserves from WPGDA, available land
         **{
             f"natura{i+1}": "resources/data/landuse_availability/"
@@ -254,7 +309,7 @@ rule build_renewable_profiles:
     input:
         availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}.nc",
         province_shape="resources/data/province_shapes/CHN_adm1.shp",
-        offshore_province_shapes=DERIVED_COMMON + "/regions/provinces_offshore.geojson",
+        offshore_province_shapes="resources/data/regions/provinces_offshore.geojson",
         cutout=CUTOUT_PATH,
     output:
         profile=DERIVED_CUTOUT+"/"+"profile_{technology}-{rc_params}.nc",
@@ -268,7 +323,7 @@ rule build_renewable_profiles:
     script:
         "scripts/build_renewable_profiles.py"
 
-# TODO check whether energy totals still needed
+# # TODO check whether energy totals still needed
 rule build_load_profiles:
     params:
         config = config,
@@ -305,9 +360,9 @@ rule build_biomass_potential:
     resources: mem_mb = ATLITE_NPROCESSES * 5000
     script: "scripts/build_biomass_potential.py"
 
-# TODO add node wildcard/id
-# NOTE: lifetimes are for the BASEYEAR and not brownfield construction year DateIn!
-#       This could be changed if costs are merged into a single file
+# # TODO add node wildcard/id
+# # NOTE: lifetimes are for the BASEYEAR and not brownfield construction year DateIn!
+# #       This could be changed if costs are merged into a single file
 rule prepare_baseyear_capacities:
     """prepare inputs for add_existing_baseyear (optional in overnight mode)"""
     params:
@@ -400,7 +455,6 @@ elif config["foresight"] == "myopic":
             province_shape="resources/data/province_shapes/CHN_adm1.shp",
             **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}.nc" 
                 for tech in config['renewable']},
-
         output:
             network_name=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
         wildcard_constraints:
