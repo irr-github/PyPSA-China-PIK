@@ -149,7 +149,8 @@ def _fix_gadm41(df_admin_l2: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
 
 
 def read_admin2_shapes(path: str, fix=True, exclude=["Macau", "HongKong"]) -> gpd.GeoDataFrame:
-    """Read and preprocess administrative level 2 shape s (GADM41).
+    """Read and preprocess administrative level 2 shapes (GADM41).
+    Merge shapes
 
     Args:
         path (str): Path to the GeoJSON/shape file.
@@ -160,22 +161,27 @@ def read_admin2_shapes(path: str, fix=True, exclude=["Macau", "HongKong"]) -> gp
         gpd.GeoDataFrame: Preprocessed administrative level 2 shapes.
     """
 
-    PROV_RENAME_MAP = {"Inner Mongolia": "InnerMongolia", "Ningxia Hui": "Ningxia", "Xizang": "Tibet"}
     admin_l2 = gpd.read_file(path).query("NAME_1 not in @exclude")
     admin_l2["NAME_1"] = admin_l2.NAME_1.map(lambda x: PROV_RENAME_MAP.get(x, x))
 
-    # merge duplicated region geometries
-    merged_geos = admin_l2.groupby(["NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1"]).apply(
-        lambda x: pd.Series(x.geometry.union_all()) if len(x) > 1 else x.geometry
+    # merge geometries
+    unmerged_NL = admin_l2.duplicated(subset=["NL_NAME_2", "NAME_1"], keep=False)
+    unmerged_EN = admin_l2.duplicated(subset=["NAME_2", "NAME_1"], keep=False)
+    admin_l2.loc[unmerged_EN, "geometry"] = (
+        admin_l2.loc[unmerged_EN]
+        .groupby(["NAME_2", "NAME_1"])
+        .geometry.transform(lambda x: x.geometry.union_all("unary"))
     )
-    merged_geos = merged_geos.to_frame().reset_index().query("NAME_1 not in @exclude")
-    admin_l2 = gpd.GeoDataFrame(
-        merged_geos[["NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1"]],
-        geometry=merged_geos[0],
-        crs=admin_l2.crs,
+    admin_l2.loc[unmerged_NL, "geometry"] = (
+        admin_l2.loc[unmerged_NL]
+        .groupby(["NL_NAME_2", "NAME_1"])
+        .geometry.transform(lambda x: x.geometry.union_all("unary"))
     )
-
+    # do this at end to not mess index
+    admin_l2.drop_duplicates(subset=["NL_NAME_2", "NAME_1"], inplace=True)
+    admin_l2.drop_duplicates(subset=["NAME_2", "NAME_1"], inplace=True)
+    admin_l2.reset_index(drop=True, inplace=True)
     if fix:
-        return _fix_gadm41(admin_l2)
-    else:
-        return admin_l2
+        admin_l2 = _fix_gadm41(admin_l2)
+        
+    return admin_l2

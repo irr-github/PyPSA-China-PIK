@@ -107,10 +107,11 @@ def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: s
     fixed.index = merged.loc[missing].index
     merged.loc[missing, [data_col, "NAME_2_y"]] = fixed[[data_col, "NAME_2"]]
     still_missing = merged.NAME_2_y.isna()
-    merged.loc[still_missing, ["NAME_1", "NAME_2"]].reset_index(drop=True).to_csv("missing_gdp_adm2.csv")
     if still_missing.sum() > 0:
         logger.warning(
             f"Could not find {data_col} data for "
             f"{still_missing.sum()} admin level 2 regions."
         )
+
+    # now merge any split geometries
     return merged

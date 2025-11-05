@@ -166,6 +166,12 @@ if __name__ == "__main__":
     gdps = pd.read_csv(snakemake.input.gdp, skiprows=1)
 
     gdp_regions = merge_w_admin_l2(gdps, regions, data_col="gdp_l2")
+    missing = gdp_regions[gdp_regions.gdp_l2.isna()]
+    if not missing.empty:
+        logger.warning(
+            f"Some admin level 2 regions are missing GDP data: {missing[[L2_KEY, L1_KEY]]}"
+        )
+    gdp_regions.fillna({"gdp_l2": 0}, inplace=True)
 
     regions_offshore = split_eez_by_region(
         eez_country,
