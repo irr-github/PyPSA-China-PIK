@@ -400,14 +400,27 @@ if __name__ == "__main__":
     processed_raster, cut_off_stats = scale_prov_totals_and_find_rural(processed_raster, prov_data)
 
     logger.info("Aggregating population by admin2 regions...")
-    population_by_admin = group_and_sum_by_mask(
+    population_by_admin_series = group_and_sum_by_mask(
         processed_raster, 
         value_band="population", 
         group_band="l2_id"
     )
-    logger.info("Saving admin2 population data.")
-    population_by_admin = pd.concat([admin2_shapes[["NAME_2", "NAME_1"]], population_by_admin], axis=1)
-    print(population_by_admin.head())
+    
+    # Merge using position-based indexing (l2_id maps to admin2_shapes position)
+    population_by_admin = pd.DataFrame({
+        "NAME_2": admin2_shapes.iloc[population_by_admin_series.index]["NAME_2"].values,
+        "NAME_1": admin2_shapes.iloc[population_by_admin_series.index]["NAME_1"].values,
+        "population": population_by_admin_series.values
+    }, index=population_by_admin_series.index)
+    
+    # Validate merge produced no NaN values
+    if population_by_admin.isna().any().any():
+        raise ValueError(
+            f"Merge produced NaN values. Index mismatch between admin2_shapes "
+            f"({len(admin2_shapes)}) and population groups ({len(population_by_admin_series)})."
+        )
+    
+    logger.info(f"Merged population data for {len(population_by_admin)} admin2 regions.")
     population_by_admin.to_csv(snakemake.output.admin2_population)
 
     # Save data

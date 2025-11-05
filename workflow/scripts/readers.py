@@ -77,14 +77,40 @@ def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: s
         GeoDataFrame with merged data.
     """
 
-    merged = admin_l2.merge(data, left_on=["NL_NAME_2"], right_on=["NL_NAME_2"], how="left", suffixes=("", "_y"))
-    missing = merged.NAME_1_y.isna()
-    fixed = merged.loc[missing, ["NAME_2", "NAME_1"]].merge(data, left_on=["NAME_2"], right_on=["NAME_2"], how="left", suffixes= ("","_y"))
+    duplicates_NL = data.duplicated(["NL_NAME_2", "NAME_1"], keep=False)
+    duplicates_EN = data.duplicated(["NAME_2", "NAME_1"], keep=False)
+    duplicates = data.loc[duplicates_NL | duplicates_EN]
+    if not duplicates.empty:
+        raise ValueError(
+            f"Data contains duplicate (NL_NAME_2, NAME_1)  or (NAME_2, NAME_1) pairs:\n{duplicates}"
+        )
+
+    merged = admin_l2.merge(
+        data,
+        left_on=["NL_NAME_2", "NAME_1"],
+        right_on=["NL_NAME_2", "NAME_1"],
+        how="left",
+        suffixes=("", "_y")
+    )
+
+    missing = merged.NAME_2_y.isna()
+    if merged.loc[missing].empty:
+        return merged
+
+    fixed = merged.loc[missing, ["NAME_2", "NAME_1"]].merge(
+        data,
+        left_on=["NAME_2", "NAME_1"],
+        right_on=["NAME_2", "NAME_1"],
+        how="left",
+        suffixes=("", "_y")
+    )
     fixed.index = merged.loc[missing].index
-    merged.loc[missing, [data_col, "NAME_1_y"]] = fixed[[data_col, "NAME_1_y"]]
-    still_missing = merged.NAME_1_y.isna()
+    merged.loc[missing, [data_col, "NAME_2_y"]] = fixed[[data_col, "NAME_2"]]
+    still_missing = merged.NAME_2_y.isna()
     merged.loc[still_missing, ["NAME_1", "NAME_2"]].reset_index(drop=True).to_csv("missing_gdp_adm2.csv")
     if still_missing.sum() > 0:
-        logger.warning(f"Could not find {data_col} data for {still_missing.sum()} admin level 2 regions.")
-        logger.warning(f" MISSING DATA FOR:\n{merged.loc[still_missing, ['NAME_1', 'NAME_2']]}")
+        logger.warning(
+            f"Could not find {data_col} data for "
+            f"{still_missing.sum()} admin level 2 regions."
+        )
     return merged
