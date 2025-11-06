@@ -299,6 +299,12 @@ if __name__ == "__main__":
         admin_l2_shapes, province_shapes, offshore_shapes, lines, snapshot_config, yr
     )
 
+    # check order kept
+    l1_ok = (network.buses.reset_index().province == admin_l2_shapes.reset_index().NAME_1).all()
+    l2_ok = (network.buses.reset_index().prefecture == admin_l2_shapes.reset_index().NAME_2).all()
+    if not (l1_ok and l2_ok):
+        raise ValueError("Admin level 2 bus order does not match shapes order") 
+
     compression = snakemake.config.get("io", None)
     if compression:
         compression = compression.get("nc_compression", None)

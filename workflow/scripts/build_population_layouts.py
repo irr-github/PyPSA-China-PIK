@@ -71,12 +71,15 @@ def compute_shape_indicators_fast(data: xr.DataArray, shapes_gdf: gpd.GeoDataFra
         shapes_gdf_proj = shapes_gdf
 
     n_shapes = len(shapes_gdf_proj)
-    indicator_arrays = []
+    n_pixels = height * width
 
     logger.info(f"Rasterizing {n_shapes} provinces or shapes...")
 
+    # Pre-allocate output array to avoid intermediate list
+    indicator_matrix = np.empty((n_pixels, n_shapes), dtype=np.uint8)
+
     for shp_idx, (_, shp_geom) in enumerate(shapes_gdf_proj.geometry.items()):
-        # Rasterize this province
+        # Rasterize directly into the output column
         province_mask = features.rasterize(
             [(shp_geom, 1)],
             out_shape=(height, width),
@@ -84,17 +87,12 @@ def compute_shape_indicators_fast(data: xr.DataArray, shapes_gdf: gpd.GeoDataFra
             fill=0,
             dtype=np.uint8
         )
-
-        # Flatten and store
-        indicator_arrays.append(province_mask.ravel())
+        indicator_matrix[:, shp_idx] = province_mask.ravel()
 
         if shp_idx % 10 == 0:
             logger.info(f"Rasterized {shp_idx+1}/{n_shapes} provinces | shapes | nodes")
 
     logger.info("Finished rasterizing all provinces | shapes | nodes.")
-    
-    # Stack all province masks
-    indicator_matrix = np.column_stack(indicator_arrays)
 
     # Convert to sparse for memory efficiency
     indicator_matrix = sp.csr_matrix(indicator_matrix)
@@ -429,5 +427,6 @@ if __name__ == "__main__":
 
     logger.debug("Rural Cut-off statistics per province:")
     logger.debug(cut_off_stats)
+    cut_off_stats.to_csv("cutoff_stats.csv", index=False)
 
     logger.info("Successfully built population layouts.")

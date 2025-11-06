@@ -479,6 +479,7 @@ def make_periodic_snapshots(
     if is_leap_year(int(year)):
         snapshots = snapshots[~((snapshots.month == 2) & (snapshots.day == 29))]
     freq_hours = int("".join(filter(str.isdigit, str(freq))))
+    
     return snapshots[::freq_hours]  # every freq hour
 
 

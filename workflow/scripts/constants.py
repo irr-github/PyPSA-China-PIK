@@ -138,6 +138,7 @@ END_YEAR = 2060
 
 # geographical
 CRS = 4326  # WGS84
+DISTANCE_CRS = 3035
 COUNTRY_NAME = "China"
 COUNTRY_ISO = "CN"
 EEZ_PREFIX = "chinese"

@@ -118,7 +118,7 @@ rule retrieve_raster_gdp:
         kummu_et_al_raster = "resources/data/population/adm2_gdp_percapita_1990_2022.tif",
         kummu_et_al_gdp_adm2 = "resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif"
     run:
-        os.makedirs(os.path.dirname(output.kummu_et_al_geo), exist_ok=True)
+        # os.makedirs(os.path.dirname(output.kummu_et_al_geo, exist_ok=True)
         shutil.move(input.kummu_et_al_raster, output.kummu_et_al_raster)
         # shutil.move(input.kummu_et_al_raster_hr, output.kummu_et_al_raster_hr)
         shutil.move(input.kummu_et_al_gdp_adm2, output.kummu_et_al_gdp_adm2)

@@ -104,7 +104,7 @@ if config['enable'].get('build_cutout', False):
 pop_raster = name = "-".join([str(v) for v in config["world_population_raster"].values()])
 rule build_population_layouts:
     params:
-        pop_year = 2022, # for urban and province, for gridded see fetch
+        pop_year = 2018, # for urban and province, for gridded see fetch
         pop_conversion = 1e4, # conversion for province_populations
         coarsen_pop_by = 3, # save space and memory
     input:
@@ -182,6 +182,27 @@ rule base_network:
 #         "../envs/environment.yaml"
 #     script:
 #         "../scripts/build_clustered_population_layouts.py"
+
+
+rule cluster_network:
+    """A simplified clustering based on l2 shapes (341) -> n user clusters
+    This will be replaced by PyPSA-EUR clustering when full osm network
+    is checked and added"""
+    params:
+        node_config = config["nodes"],
+        # line_margin = config["security"].get("line_security_margin", 70) / 100,
+    input:
+        admin_l2_shapes ="resources/data/regions/admin2_shapes.geojson",
+        offshore_shapes=DERIVED_COMMON + "/regions/regions_offshore.geojson",
+        base_network=RESULTS_DIR + "/networks/base_{planning_horizons}.nc",
+    output:
+        clusted_network=RESULTS_DIR + "/networks/base_clustered_{planning_horizons}.nc",
+        busmap = RESULTS_DIR + "/networks/busmap_clustered_{planning_horizons}.csv",
+        regions_offshore=RESULTS_DIR + "/regions/regions_offshore_clustered_{planning_horizons}.geojson",
+        regions_onshore=RESULTS_DIR + "/regions/regions_onshore_clustered_{planning_horizons}.geojson",
+    script:
+        "scripts/cluster_network_l2.py"
+
 
 # TODO merge all techs into a single csv
 # TODO add node wildcard/id
@@ -309,8 +330,8 @@ rule build_electricity_demand:
         province_codes = "resources/data/regions/province_codes.csv",
         hrly_regional_elec_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
     output:
-        provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
-        base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.h5",
+        # provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
+        base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
     log: LOG_DIR + "/build_elec_demand.log"
     script:
         "scripts/build_elec_demand.py"
