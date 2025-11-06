@@ -101,9 +101,11 @@ def split_eez_by_region(
     """Break up the eez by admin1 regions based on voronoi polygons of the centroids
 
     Args:
-        eez (gpd.GeoDataFrame): _description_
-        regions (gpd.GeoDataFrame): _description_
-        indx_key (str, optional): name of the provinces col in regions. Defaults to "region".
+        eez (gpd.GeoDataFrame): country eez shape
+        regions (gpd.GeoDataFrame): l2 (or arbitrary) shapes
+        prov_shapes (gpd.GeoDataFrame): province shapes
+        indx_key (str, optional): name of relevant col in regions. Defaults to "region".
+        prov_key (str, optional): name of the province col in prov_shapes. Defaults to "province".
         simplify_tol (float, optional): tolerance for simplifying the voronoi polygons. Defaults to 0.5.
 
     Returns:
@@ -128,22 +130,21 @@ def split_eez_by_region(
     )
 
     # assign province
-    repr_points = gpd.GeoDataFrame(index = reg_voronois.index, geometry = reg_voronois.representative_point().values)
-    reg_voronois[prov_key] = repr_points.sjoin_nearest(prov_shapes)[prov_key]
-    if reg_voronois[prov_key].isna().sum():
-        logger.warning(
-            f"{reg_voronois[prov_key].isna().sum()} voronoi regions could not be assigned a province"
+    intersections = reg_voronois.sjoin(prov_shapes, predicate="intersects")
+    intersections["key_pair"] = intersections.apply(lambda x: (x[prov_key], x[indx_key]), axis=1)
+    valid = regions.apply(lambda x: (x[prov_key], x[indx_key]), axis=1) # noqa
+    reg_voronois_assigned = intersections.query("key_pair in @valid")
+    if not len(reg_voronois_assigned) == len(regions):
+        raise ValueError(
+            "Error during offshore province assignment - some (l2, l1) keys likely duplicated"
         )
-
-    # remove overlaps
-    gdf_ = remove_overlaps(reg_voronois.set_index(indx_key)).reset_index()
+    reg_voronois_assigned = reg_voronois_assigned.query("NAME_1 in @OFFSHORE_WIND_NODES")
 
     eez_prov = (
-        gdf_.query(f"{L1_KEY} in @OFFSHORE_WIND_NODES")
+        reg_voronois_assigned
         .overlay(eez, how="intersection")#[[indx_key, "geometry"]]
-        .groupby([indx_key, prov_key]).geometry.apply(lambda x: x.union_all("unary"))
+        .dissolve(by="key_pair")
     )
-
     return gpd.GeoDataFrame(eez_prov.reset_index().rename(columns={0:"geometry"}))
 
 

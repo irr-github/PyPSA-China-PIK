@@ -107,9 +107,10 @@ def build_busmap_from_config(
 def aggregate_regions(
     busmap: pd.Series,
     regions: gpd.GeoDataFrame,
-    id_col: str = "name",
 ) -> gpd.GeoDataFrame:
     """Aggregate regional shapes based on busmap clustering.
+    NOTE: ASSUMES busmap indices match regions indices. 
+     This will not be robust with flexible clustering
 
     Args:
         busmap (pd.Series): Mapping from L2 bus ID to cluster name
@@ -120,20 +121,13 @@ def aggregate_regions(
         gpd.GeoDataFrame: Dissolved regions by cluster
     """
     regions = regions.copy()
-    
-    # Ensure index matches busmap
-    if id_col in regions.columns and id_col != regions.index.name:
-        regions = regions.set_index(id_col)
-    
-    # Reindex to match busmap
-    regions = regions.reindex(busmap.index)
+    # Assign cluster IDs to regions (assume indices match)
     regions["cluster"] = busmap.values
     
     # Dissolve geometries by cluster
     clustered = regions.dissolve(by="cluster", as_index=False)
-    clustered = clustered.rename(columns={"cluster": id_col})
-    
-    return clustered
+
+    return clustered[["cluster", "geometry"]]
 
 
 def update_bus_coordinates(
@@ -156,7 +150,7 @@ def update_bus_coordinates(
     # merge (l2) shapes by custom cluster
     shapes["cluster"] = busmap.values
     # this is equivalent to disslolve?
-    clusters = admin_l2_shapes.groupby("cluster").geometry.apply(lambda x: x.union_all("unary"))
+    clusters = shapes.groupby("cluster").geometry.apply(lambda x: x.union_all("unary"))
     # TODO consider switching to Pole of Inaccessibility as pypsa-eur does
     points = clusters.representative_point()
     points.name="point"
@@ -170,6 +164,7 @@ def update_bus_coordinates(
 
     # Drop admin-level columns
     n.buses.drop(columns=["prefecture","prefecture_cn"], inplace=True)
+
 
 def clustering_for_busmap(
     n: pypsa.Network,
@@ -264,29 +259,30 @@ if __name__ == "__main__":
     clustering.busmap.to_csv(snakemake.output.busmap)
 
     # Aggregate regional shapes
-    if "regions_onshore" in snakemake.input:
-        regions_onshore = gpd.read_file(snakemake.input.regions_onshore)
-        clustered_onshore = aggregate_regions(
+    clustered_onshore = aggregate_regions(
             clustering.busmap,
-            regions_onshore,
-            id_col="name",
+            admin_l2_shapes,
         )
-        clustered_onshore.to_file(snakemake.output.regions_onshore)
+    clustered_onshore.to_file(snakemake.output.regions_onshore)
 
-    if "regions_offshore" in snakemake.input:
-        regions_offshore = gpd.read_file(snakemake.input.regions_offshore)
-        clustered_offshore = aggregate_regions(
-            clustering.busmap,
-            regions_offshore,
-            id_col="name",
-        )
-        clustered_offshore.to_file(snakemake.output.regions_offshore)
+    regions_offshore = gpd.read_file(snakemake.input.offshore_shapes)
+    # merge with busmap index -> TODO move into aggregate_regions
+    regions_offshore = regions_offshore.merge(
+        admin_l2_shapes.reset_index()[["NAME_1", "NAME_2","index"]],
+        on = ["NAME_1", "NAME_2"], how="left", suffixes=("", "full")
+    )
+    regions_offshore.index = regions_offshore["index"].astype(int).astype(str)
+    clustered_offshore = aggregate_regions(
+        clustering.busmap.loc[regions_offshore.index],
+        regions_offshore,
+    )
+    clustered_offshore.to_file(snakemake.output.regions_offshore)
 
     # Export clustered network
     nc.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
 
     compression = snakemake.config.get("io", {}).get("nc_compression", None)
-    nc.export_to_netcdf(snakemake.output.clusted_network, compression=compression)
+    nc.export_to_netcdf(snakemake.output.clustered_network, compression=compression)
 
     logger.info(
         f"Clustered network:\n"
