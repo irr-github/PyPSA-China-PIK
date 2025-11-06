@@ -3,15 +3,13 @@ from zipfile import ZipFile
 import shutil
 import os
 
-# TODO rework this, save shapes with all admin levels
-# build nodes with another script and save that to DERIVED_DATA
-# nodes could be read by snakefile and passed as a param to the relevant rules
+
 rule fetch_region_shapes:
     """Fetch administrative shape polygons"""
     output:
         country_shape="resources/data/regions/country.geojson",
         province_shapes="resources/data/regions/provinces_onshore.geojson",
-        offshore_shapes="resources/data/regions/provinces_offshore.geojson",
+        offshore_shapes="resources/data/regions/country_offshore.geojson",
         admin2_shapes="resources/data/regions/admin2_shapes.geojson",
     log:
         LOGS_COMMON + "/fetch_regions_shapes.log",
@@ -27,8 +25,6 @@ release_yr, rev, yr, v = (
     config["world_population_raster"]["version"],
 )
 
-print(f"Raster Pop target is: resources/data/population/china_world_pop_{name}.tif")
-print(f"from https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/")
 
 rule fetch_gridded_population:
     params:
@@ -77,40 +73,6 @@ if config["enable"].get("retrieve_raster", True):
                 zip_ref.extractall(os.path.dirname(params.zip_file))
             os.remove(params.zip_file)
 
-rule retrieve_powerplants:
-    input:
-        powerplants=storage.http(
-            "https://zenodo.org/records/16810831/files/Global-integrated-Plant-Tracker-July-2025_china.xlsx"
-        ),
-    output:
-        powerplants="resources/data/existing_infrastructure/gem_data_raw/Global-integrated-Plant-Tracker-July-2025_china.xlsx",
-    run:
-        os.makedirs(os.path.dirname(output.powerplants), exist_ok=True)
-        shutil.move(input.powerplants, output.powerplants)
-
-# rule retrieve_gdp:
-#     """ See https://gee-community-catalog.org/projects/gridded_gdp_hdi/
-#     ML-based study https://www.nature.com/articles/s41597-025-04487-x .
-#     Use this until easier to get official county level data for China.
-#     Also possible to get data via google earth engine.
-#     """
-#     input:
-#         kummu_et_al_geo = storage.http("https://zenodo.org/records/16741980/files/polyg_adm2_gdp_perCapita_1990_2022.gpkg"),
-#         kummu_et_al_raster = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022_30arcmin.tif"),
-#         kummu_et_al_raster_hr = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif"),
-#         kummu_et_al_gdp_adm2 = storage.http("https://zenodo.org/records/16741980/files/rast_gdpTot_1990_2022_30arcmin.tif")
-#     output:
-#         kummu_et_al_geo = "resources/data/population/adm2_gdp_percapita_1990_2022.gpkg",
-#         kummu_et_al_raster = "resources/data/population/adm2_gdp_percapita_1990_2022.tif",
-#         kummu_et_al_raster_hr = "resources/data/population/adm2_gdp_percapita_1990_2022_hr.tif",
-#         kummu_et_al_gdp_adm2 = "resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif"
-#     run:
-#         os.makedirs(os.path.dirname(output.kummu_et_al_geo), exist_ok=True)
-#         shutil.move(input.kummu_et_al_geo, output.kummu_et_al_geo)
-#         shutil.move(input.kummu_et_al_raster, output.kummu_et_al_raster)
-#         shutil.move(input.kummu_et_al_raster_hr, output.kummu_et_al_raster_hr)
-#         shutil.move(input.kummu_et_al_gdp_adm2, output.kummu_et_al_gdp_adm2)
-
 
 if config["enable"].get("retrieve_cutout", False) and config["enable"].get(
     "build_cutout", False
@@ -128,4 +90,36 @@ elif config["enable"].get("retrieve_cutout", False):
         run:
             os.makedirs(os.path.dirname(output.cutout), exist_ok=True)
             shutil.move(input.zenodo_cutout, output.cutout)
+
+
+rule retrieve_powerplants:
+    input:
+        powerplants=storage.http(
+            "https://zenodo.org/records/16810831/files/Global-integrated-Plant-Tracker-July-2025_china.xlsx"
+        ),
+    output:
+        powerplants="resources/data/existing_infrastructure/gem_data_raw/Global-integrated-Plant-Tracker-July-2025_china.xlsx",
+    run:
+        os.makedirs(os.path.dirname(output.powerplants), exist_ok=True)
+        shutil.move(input.powerplants, output.powerplants)
+
+
+rule retrieve_raster_gdp:
+    """ See https://gee-community-catalog.org/projects/gridded_gdp_hdi/
+    ML-based study https://www.nature.com/articles/s41597-025-04487-x .
+    Covers many years but not trained on l2 China at all.
+
+    Not actually needed right now but kept for reference. Also possible to get data via google earth engine.
+    """
+    input:
+        kummu_et_al_raster_hr = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif"),
+        kummu_et_al_gdp_adm2 = storage.http("https://zenodo.org/records/16741980/files/rast_gdpTot_1990_2022_30arcmin.tif")
+    output:
+        kummu_et_al_raster = "resources/data/population/adm2_gdp_percapita_1990_2022.tif",
+        kummu_et_al_gdp_adm2 = "resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif"
+    run:
+        os.makedirs(os.path.dirname(output.kummu_et_al_geo), exist_ok=True)
+        shutil.move(input.kummu_et_al_raster, output.kummu_et_al_raster)
+        # shutil.move(input.kummu_et_al_raster_hr, output.kummu_et_al_raster_hr)
+        shutil.move(input.kummu_et_al_gdp_adm2, output.kummu_et_al_gdp_adm2)
 
