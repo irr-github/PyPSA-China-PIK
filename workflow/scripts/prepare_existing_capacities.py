@@ -14,13 +14,27 @@ import numpy as np
 import pandas as pd
 from _helpers import configure_logging, mock_snakemake
 from _pypsa_helpers import make_periodic_snapshots
-from add_electricity import load_costs
+from readers import load_costs
 from constants import YEAR_HRS
 
 logger = logging.getLogger(__name__)
 idx = pd.IndexSlice
 spatial = SimpleNamespace()
 
+CARRIER_MAP = {
+    "coal": "coal power plant",
+    "CHP coal": "central coal CHP",
+    "CHP gas": "central gas CHP",
+    "OCGT": "gas OCGT",
+    "CCGT": "gas CCGT",
+    "solar": "solar",
+    "solar thermal": "central solar thermal",
+    "onwind": "onwind",
+    "offwind": "offwind",
+    "coal boiler": "central coal boiler",
+    "ground heat pump": "central ground-sourced heat pump",
+    "nuclear": "nuclear",
+}
 
 def determine_simulation_timespan(config: dict, year: int) -> int:
     """Determine the simulation timespan in years (so the network object is not needed)
@@ -192,6 +206,21 @@ def convert_CHP_to_poweronly(capacities: pd.DataFrame) -> pd.DataFrame:
     return capacities
 
 
+def load_powerplants(path: os.PathLike) -> pd.DataFrame:
+    """Load cleaned powerplant data from csv
+
+    Args:
+        path (os.PathLike): path to the cleaned powerplant csv
+
+    Returns:
+        pd.DataFrame: DataFrame with cleaned powerplant data
+    """
+
+    ppl_data = pd.read_csv(path, index_col=0).reset_index()
+    ppl_data.Tech = ppl_data.Type.map(CARRIER_MAP)
+    return ppl_data
+
+
 if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
@@ -199,7 +228,8 @@ if __name__ == "__main__":
             topology="current+FCG",
             co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
             planning_horizons="2020",
-            configfiles="resources/tmp/pseudo_coupled.yml",
+            heating_demand="positive",
+            # configfiles="resources/tmp/pseudo_coupled.yml",
         )
 
     configure_logging(snakemake, logger=logger)
@@ -210,6 +240,7 @@ if __name__ == "__main__":
     baseyear = min([int(y) for y in config["scenario"]["planning_horizons"]])
     tech_costs = snakemake.input.tech_costs
     data_paths = {k: v for k, v in snakemake.input.items()}
+    cleaned_ppls = pd.read_csv(snakemake.input.cleaned_ppls, index_col=0)
 
     n_years = determine_simulation_timespan(snakemake.config, baseyear)
     costs = load_costs(tech_costs, config["costs"], config["electricity"], baseyear, n_years)

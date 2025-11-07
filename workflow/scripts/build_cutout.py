@@ -53,7 +53,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake("build_cutout", cutout="China-tests-cutout")
     configure_logging(snakemake, logger=logger)
 
-    config = snakemake.config
+    config = snakemake.params.config
     # overwrite cutoutname if was wildcard, get params
     config["atlite"]["cutout_name"] = snakemake.wildcards.get(
         "cutout", config["atlite"]["cutout_name"]

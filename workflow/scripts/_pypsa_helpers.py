@@ -26,54 +26,57 @@ COMPONENT_MAPPING = {
 }
 
 
-def get_location_and_carrier(
-    n: pypsa.Network, c: str, port: str = "", nice_names: bool = True
-) -> list[pd.Series]:
-    """Get component location and carrier.
+def aggregate_costs(
+    n: pypsa.Network,
+    flatten=False,
+    opts: dict | None = None,
+    existing_only=False,
+) -> pd.Series | pd.DataFrame:
+    """LEGACY FUNCTION used in pypsa heating plots - unclear what it does
 
     Args:
         n (pypsa.Network): the network object
-        c (str): component name
-        port (str, optional): port name. Defaults to "".
-        nice_names (bool, optional): use nice names. Defaults to True.
-
-    Returns:
-        list[pd.Series]: list of location and carrier series
+        flatten (bool, optional):merge capex and marginal ? Defaults to False.
+        opts (dict, optional): options for the function. Defaults to None.
+        existing_only (bool, optional): use _nom instead of nom_opt. Defaults to False.
     """
 
-    # bus = f"bus{port}"
-    bus, carrier = pypsa.statistics.get_bus_and_carrier(n, c, port, nice_names=nice_names)
-    location = bus.map(n.buses.location).rename("location")
-    return [location, carrier]
+    components = dict(
+        Link=("p_nom", "p0"),
+        Generator=("p_nom", "p"),
+        StorageUnit=("p_nom", "p"),
+        Store=("e_nom", "p"),
+        Line=("s_nom", None),
+        Transformer=("s_nom", None),
+    )
 
-
-def filter_carriers(n: pypsa.Network, bus_carriers=["AC"], comps=["Generator", "Link"]) -> list:
-    """Filter carriers for links that attach to a bus of the target carrier
-
-    Args:
-        n (pypsa.Network): the pypsa network object
-        bus_carrier (str | list, optional): the bus carrier. Defaults to "AC".
-        comps (list, optional): the components to check. Defaults to ["Generator", "Link"].
-
-    Returns:
-        list: list of carriers that are attached to the bus carrier
-    """
-    if isinstance(bus_carriers, str):
-        bus_carriers = [bus_carriers]
-
-    carriers = []
-    for c in comps:
-        comp = n.static(c)
-        ports = [c for c in comp.columns if c.startswith("bus")]
-        comp_df = comp[ports + ["carrier"]]
-        is_attached = (
-            comp_df[ports].apply(lambda x: x.map(n.buses.carrier).isin(bus_carriers)).T.any()
+    costs = {}
+    for c, (p_nom, p_attr) in zip(
+        n.iterate_components(components.keys(), skip_empty=True), components.values()
+    ):
+        if not existing_only:
+            p_nom += "_opt"
+        costs[(c.list_name, "capital")] = (
+            (c.df[p_nom] * c.df.capital_cost).groupby(c.df.carrier).sum()
         )
-        carriers += comp_df.loc[is_attached].carrier.unique().tolist()
+        if p_attr is not None:
+            p = c.dynamic[p_attr].sum()
+            if c.name == "StorageUnit":
+                p = p.loc[p > 0]
+            costs[(c.list_name, "marginal")] = (p * c.df.marginal_cost).groupby(c.df.carrier).sum()
+    costs = pd.concat(costs)
 
-    if bus_carriers not in carriers:
-        carriers += bus_carriers
-    return carriers
+    if flatten:
+        assert opts is not None
+        conv_techs = opts["conv_techs"]
+
+        costs = costs.reset_index(level=0, drop=True)
+        costs = costs["capital"].add(
+            costs["marginal"].rename({t: t + " marginal" for t in conv_techs}),
+            fill_value=0.0,
+        )
+
+    return costs
 
 
 def assign_locations(n: pypsa.Network):
@@ -225,6 +228,105 @@ def calc_generation_share(df, n, carrier):
     return df
 
 
+def calc_atlite_heating_timeshift(date_range: pd.date_range, use_last_ts=False) -> int:
+    """Imperfect function to calculate the heating time shift for atlite
+    Atlite is in xarray, which does not have timezone handling. Adapting the UTC ERA5 data
+    to the network local time, is therefore limited to a single shift, which is based on the first
+    entry of the time range. For a whole year, in the northern Hemisphere -> winter
+
+    Args:
+        date_range (pd.date_range): the date range for which the shift is calc
+        use_last_ts (bool, optional): use last instead of first. Defaults to False.
+
+    Returns:
+        int: a single timezone shift to utc in hours
+    """
+    # import constants here to not interfere with snakemake
+    from constants import TIMEZONE
+
+    idx = 0 if not use_last_ts else -1
+    return pytz.timezone(TIMEZONE).utcoffset(date_range[idx]).total_seconds() / 3600
+
+
+def determine_simulation_timespan(config: dict, year: int) -> int:
+    """Determine the simulation timespan in years (so the network object is not needed)
+
+    Args:
+        config (dict): the snakemake config
+        year (int): the year to simulate
+    Returns:
+        int: the simulation timespan in years
+    """
+
+    # make snapshots (drop leap days) -> possibly do all the unpacking in the function
+    snapshot_cfg = config["snapshots"]
+    snapshots = make_periodic_snapshots(
+        year=year,
+        freq=snapshot_cfg["freq"],
+        start_day_hour=snapshot_cfg["start"],
+        end_day_hour=snapshot_cfg["end"],
+        bounds=snapshot_cfg["bounds"],
+        # naive local timezone
+        tz=None,
+        end_year=None if not snapshot_cfg["end_year_plus1"] else year + 1,
+    )
+
+    # load costs
+    n_years = config["snapshots"]["frequency"] * len(snapshots) / YEAR_HRS
+
+    return n_years
+
+
+def filter_carriers(n: pypsa.Network, bus_carriers=["AC"], comps=["Generator", "Link"]) -> list:
+    """Filter carriers for links that attach to a bus of the target carrier
+
+    Args:
+        n (pypsa.Network): the pypsa network object
+        bus_carrier (str | list, optional): the bus carrier. Defaults to "AC".
+        comps (list, optional): the components to check. Defaults to ["Generator", "Link"].
+
+    Returns:
+        list: list of carriers that are attached to the bus carrier
+    """
+    if isinstance(bus_carriers, str):
+        bus_carriers = [bus_carriers]
+
+    carriers = []
+    for c in comps:
+        comp = n.static(c)
+        ports = [c for c in comp.columns if c.startswith("bus")]
+        comp_df = comp[ports + ["carrier"]]
+        is_attached = (
+            comp_df[ports].apply(lambda x: x.map(n.buses.carrier).isin(bus_carriers)).T.any()
+        )
+        carriers += comp_df.loc[is_attached].carrier.unique().tolist()
+
+    if bus_carriers not in carriers:
+        carriers += bus_carriers
+    return carriers
+
+
+def get_location_and_carrier(
+    n: pypsa.Network, c: str, port: str = "", nice_names: bool = True
+) -> list[pd.Series]:
+    """Get component location and carrier.
+
+    Args:
+        n (pypsa.Network): the network object
+        c (str): component name
+        port (str, optional): port name. Defaults to "".
+        nice_names (bool, optional): use nice names. Defaults to True.
+
+    Returns:
+        list[pd.Series]: list of location and carrier series
+    """
+
+    # bus = f"bus{port}"
+    bus, carrier = pypsa.statistics.get_bus_and_carrier(n, c, port, nice_names=nice_names)
+    location = bus.map(n.buses.location).rename("location")
+    return [location, carrier]
+
+
 # TODO is thsi really good? useful?
 # TODO make a standard apply/str op instead ofmap in add_electricity.sanitize_carriers
 def rename_techs(label: str, nice_names: dict | pd.Series | None = None) -> str:
@@ -295,79 +397,6 @@ def rename_techs(label: str, nice_names: dict | pd.Series | None = None) -> str:
     return label
 
 
-def aggregate_costs(
-    n: pypsa.Network,
-    flatten=False,
-    opts: dict | None = None,
-    existing_only=False,
-) -> pd.Series | pd.DataFrame:
-    """LEGACY FUNCTION used in pypsa heating plots - unclear what it does
-
-    Args:
-        n (pypsa.Network): the network object
-        flatten (bool, optional):merge capex and marginal ? Defaults to False.
-        opts (dict, optional): options for the function. Defaults to None.
-        existing_only (bool, optional): use _nom instead of nom_opt. Defaults to False.
-    """
-
-    components = dict(
-        Link=("p_nom", "p0"),
-        Generator=("p_nom", "p"),
-        StorageUnit=("p_nom", "p"),
-        Store=("e_nom", "p"),
-        Line=("s_nom", None),
-        Transformer=("s_nom", None),
-    )
-
-    costs = {}
-    for c, (p_nom, p_attr) in zip(
-        n.iterate_components(components.keys(), skip_empty=True), components.values()
-    ):
-        if not existing_only:
-            p_nom += "_opt"
-        costs[(c.list_name, "capital")] = (
-            (c.df[p_nom] * c.df.capital_cost).groupby(c.df.carrier).sum()
-        )
-        if p_attr is not None:
-            p = c.dynamic[p_attr].sum()
-            if c.name == "StorageUnit":
-                p = p.loc[p > 0]
-            costs[(c.list_name, "marginal")] = (p * c.df.marginal_cost).groupby(c.df.carrier).sum()
-    costs = pd.concat(costs)
-
-    if flatten:
-        assert opts is not None
-        conv_techs = opts["conv_techs"]
-
-        costs = costs.reset_index(level=0, drop=True)
-        costs = costs["capital"].add(
-            costs["marginal"].rename({t: t + " marginal" for t in conv_techs}),
-            fill_value=0.0,
-        )
-
-    return costs
-
-
-def calc_atlite_heating_timeshift(date_range: pd.date_range, use_last_ts=False) -> int:
-    """Imperfect function to calculate the heating time shift for atlite
-    Atlite is in xarray, which does not have timezone handling. Adapting the UTC ERA5 data
-    to the network local time, is therefore limited to a single shift, which is based on the first
-    entry of the time range. For a whole year, in the northern Hemisphere -> winter
-
-    Args:
-        date_range (pd.date_range): the date range for which the shift is calc
-        use_last_ts (bool, optional): use last instead of first. Defaults to False.
-
-    Returns:
-        int: a single timezone shift to utc in hours
-    """
-    # import constants here to not interfere with snakemake
-    from constants import TIMEZONE
-
-    idx = 0 if not use_last_ts else -1
-    return pytz.timezone(TIMEZONE).utcoffset(date_range[idx]).total_seconds() / 3600
-
-
 def is_leap_year(year: int) -> bool:
     """Determine whether a year is a leap year.
 
@@ -378,54 +407,6 @@ def is_leap_year(year: int) -> bool:
     """
     year = int(year)
     return year % 4 == 0 and (year % 100 != 0 or year % 400 == 0)
-
-
-def load_network_for_plots(
-    network_file: os.PathLike,
-    tech_costs: os.PathLike,
-    config: dict,
-    cost_year: int,
-    combine_hydro_ps=True,
-) -> pypsa.Network:
-    """Load network object (LEGACY FUNCTION for heat plot)
-
-    Args:
-        network_file (os.PathLike): the path to the network file
-        tech_costs (os.PathLike): the path to the costs file
-        config (dict): the snamekake config
-        cost_year (int): the year for the costs
-        combine_hydro_ps (bool, optional): combine the hydro & PHS carriers. Defaults to True.
-
-    Returns:
-        pypsa.Network: the network object
-    """
-
-    from add_electricity import load_costs, update_transmission_costs
-
-    n = pypsa.Network(network_file)
-
-    n.loads["carrier"] = n.loads.bus.map(n.buses.carrier) + " load"
-    n.stores["carrier"] = n.stores.bus.map(n.buses.carrier)
-
-    n.links["carrier"] = n.links.bus0.map(n.buses.carrier) + "-" + n.links.bus1.map(n.buses.carrier)
-    n.lines["carrier"] = "AC line"
-    n.transformers["carrier"] = "AC transformer"
-
-    # n.lines['s_nom'] = n.lines['s_nom_min']
-    # n.links['p_nom'] = n.links['p_nom_min']
-
-    if combine_hydro_ps:
-        n.storage_units.loc[n.storage_units.carrier.isin({"PHS", "hydro"}), "carrier"] = "hydro+PHS"
-
-    # if the carrier was not set on the heat storage units
-    # bus_carrier = n.storage_units.bus.map(n.buses.carrier)
-    # n.storage_units.loc[bus_carrier == "heat","carrier"] = "water tanks"
-
-    Nyears = n.snapshot_weightings.objective.sum() / 8760.0
-    costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, Nyears)
-    update_transmission_costs(n, costs)
-
-    return n
 
 
 def mock_solve(n: pypsa.Network) -> pypsa.Network:

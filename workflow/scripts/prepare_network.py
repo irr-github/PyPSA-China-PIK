@@ -26,7 +26,8 @@ from _pypsa_helpers import (
     make_periodic_snapshots,
     shift_profile_to_planning_year,
 )
-from add_electricity import load_costs, sanitize_carriers
+from readers import load_costs
+from add_electricity import sanitize_carriers
 from build_biomass_potential import estimate_co2_intensity_xing
 from constants import (
     CRS,

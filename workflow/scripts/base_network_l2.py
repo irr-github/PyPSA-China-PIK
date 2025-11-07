@@ -273,7 +273,7 @@ if __name__ == "__main__":
     configure_logging(snakemake)
     # mp.set_start_method("spawn", force=True)
 
-    yr = int(snakemake.wildcards["planning_horizons"])
+    yr = int(snakemake.params.refyear)
     node_config = snakemake.params.get("node_config", {})
     snapshot_config = snakemake.params.get("snapshots")
     exclude_provinces = node_config.get("exclude_provinces", [])
@@ -292,7 +292,6 @@ if __name__ == "__main__":
     # TODO use investment costs from gem lines
     lines = pd.read_csv(lines_p, skiprows=1)
     lines = _clean_gem_lines(lines, exclude_provinces)
-    lines = lines.query("build_year <= @yr")
     lines["p_max_pu"] = snakemake.params["line_margin"]
 
     network = build_base_network(

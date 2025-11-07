@@ -87,6 +87,7 @@ if __name__ == "__main__":
             protected_Marine_shp.to_file(TMP)
             excluder.add_geometry(TMP)
 
+    # TODO soft code nodata value
     # TODO go straight to the copernicus monitoring instead of using each subraster
     # add gridcodes per resource in the monitoring raster data
     if technology != "offwind":

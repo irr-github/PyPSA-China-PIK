@@ -3,11 +3,134 @@
 import os
 import pandas as pd
 import geopandas as gpd
-
 import logging
+
 from constants import PROV_NAMES, PROV_RENAME_MAP
+from functions import calculate_annuity
 
 logger = logging.getLogger(__name__)
+
+
+def load_costs(
+    tech_costs: os.PathLike,
+    cost_config: dict,
+    elec_config: dict,
+    cost_year: int,
+    n_years: int,
+    econ_lifetime=40,
+) -> pd.DataFrame:
+    """Load techno-economic data for technologies. Calculate the anualised capex costs
+      and OM costs for the technologies based on the input data
+
+    Args:
+        tech_costs (PathLike): the csv containing the costs
+        cost_config (dict): the snakemake china cost config
+        elec_config (dict): the snakemake china electricity config
+        cost_year (int): the year for which the costs are retrived
+        n_years (int): the # of years represented by the snapshots/investment period
+        econ_lifetime (int, optional): the max lifetime over which to discount. Defaults to 40.
+
+    Returns:
+        pd.DataFrame: costs dataframe in [CURRENCY] per MW_ ... or per MWh_ ...
+    """
+    idx = pd.IndexSlice
+
+    # set all asset costs and other parameters
+    costs = pd.read_csv(tech_costs, index_col=list(range(3))).sort_index()
+    costs.fillna(" ", inplace=True)
+    # correct units to MW and EUR
+    costs.loc[costs.unit.str.contains("/kW"), "value"] *= 1e3
+    costs.loc[costs.unit.str.contains("USD"), "value"] *= cost_config["USD2013_to_EUR2013"]
+    costs.loc[costs.unit.str.contains("USD"), "value"] *= cost_config["USD2013_to_EUR2013"]
+
+    cost_year = float(cost_year)
+    costs = (
+        costs.loc[idx[:, cost_year, :], "value"]
+        .unstack(level=2)
+        .groupby("technology")
+        .sum(min_count=1)
+    )
+
+    # TODO set default lifetime as option
+    if "discount rate" not in costs.columns:
+        costs.loc[:, "discount rate"] = cost_config["discountrate"]
+    costs = costs.fillna(
+        {
+            "CO2 intensity": 0,
+            "FOM": 0,
+            "VOM": 0,
+            "discount rate": cost_config["discountrate"],
+            "efficiency": 1,
+            "hist_efficiency": 1,  # represents brownfield efficiency state, only useful for links
+            "fuel": 0,
+            "investment": 0,
+            "lifetime": 25,
+        }
+    )
+
+    discount_period = costs["lifetime"].apply(lambda x: min(x, econ_lifetime))
+    costs["capital_cost"] = (
+        (calculate_annuity(discount_period, costs["discount rate"]) + costs["FOM"] / 100.0)
+        * costs["investment"]
+        * n_years
+    )
+
+    costs.at["OCGT", "fuel"] = costs.at["gas", "fuel"]
+    costs.at["CCGT", "fuel"] = costs.at["gas", "fuel"]
+    costs.at["CCGT-CCS", "fuel"] = costs.at["gas", "fuel"]
+
+    costs["marginal_cost"] = costs["VOM"] + costs["fuel"] / costs["efficiency"]
+
+    costs = costs.rename(columns={"CO2 intensity": "co2_emissions"})
+
+    costs.at["OCGT", "co2_emissions"] = costs.at["gas", "co2_emissions"]
+    costs.at["CCGT", "co2_emissions"] = costs.at["gas", "co2_emissions"]
+
+    def costs_for_storage(store, link1, link2=None, max_hours=1.0):
+        capital_cost = link1["capital_cost"] + max_hours * store["capital_cost"]
+        if link2 is not None:
+            capital_cost += link2["capital_cost"]
+        return pd.Series(dict(capital_cost=capital_cost, marginal_cost=0.0, co2_emissions=0.0))
+
+    max_hours = elec_config["max_hours"]
+    costs.loc["battery"] = costs_for_storage(
+        costs.loc["battery storage"], costs.loc["battery inverter"], max_hours=max_hours["battery"]
+    )
+
+    for attr in ("marginal_cost", "capital_cost"):
+        overwrites = cost_config.get(attr)
+        overwrites = cost_config.get(attr)
+        if overwrites is not None:
+            overwrites = pd.Series(overwrites)
+            costs.loc[overwrites.index, attr] = overwrites
+
+    return costs
+
+
+def read_generic_province_data(
+    data_p: os.PathLike,
+    index_col: int | str = 0,
+    index_name: str = "province",
+) -> pd.DataFrame:
+    """Read generic province data from csv
+
+    Args:
+        data_p (os.PathLike): the data path.
+        index_col (int, optional): the index column. Defaults to 0.
+        index_name (str, optional): the output index name. Defaults to "province".
+
+    Returns:
+        pd.DataFrame: the formatted data
+    """
+    data = pd.read_csv(data_p, index_col=index_col).rename_axis(index_name)
+
+    # common fixes to province names
+    data.index = data.index.map(lambda x: PROV_RENAME_MAP.get(x, x))
+
+    missing = set(PROV_NAMES) - set(data.index)
+    if missing:
+        raise ValueError(f"The following provinces are missing from {data_p}: {missing}")
+    return data.loc[PROV_NAMES]
 
 
 def read_yearly_load_projections(
@@ -35,32 +158,6 @@ def read_yearly_load_projections(
     yearly_proj.rename(columns={c: int(c) for c in yearly_proj.columns}, inplace=True)
 
     return yearly_proj * conversion
-
-
-def read_generic_province_data(
-    data_p: os.PathLike,
-    index_col: int | str = 0,
-    index_name: str = "province",
-) -> pd.DataFrame:
-    """Read generic province data from csv
-
-    Args:
-        data_p (os.PathLike): the data path.
-        index_col (int, optional): the index column. Defaults to 0.
-        index_name (str, optional): the output index name. Defaults to "province".
-
-    Returns:
-        pd.DataFrame: the formatted data
-    """
-    data = pd.read_csv(data_p, index_col=index_col).rename_axis(index_name)
-
-    # common fixes to province names
-    data.index = data.index.map(lambda x: PROV_RENAME_MAP.get(x, x))
-
-    missing = set(PROV_NAMES) - set(data.index)
-    if missing:
-        raise ValueError(f"The following provinces are missing from {data_p}: {missing}")
-    return data.loc[PROV_NAMES]
 
 
 def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: str) -> gpd.GeoDataFrame:

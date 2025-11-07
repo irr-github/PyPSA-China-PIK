@@ -12,7 +12,7 @@ from constants import POP_YEAR, PROV_NAMES, YEARBOOK_DATA2POP
 logger = logging.getLogger(__name__)
 
 
-def load_pop_csv(csv_path: os.PathLike) -> pd.DataFrame:
+def load_pop_csv(csv_path: os.PathLike, year = POP_YEAR) -> pd.DataFrame:
     """Load the national bureau of statistics of China population
     (Yearbook - Population, table 2.5 pop at year end by Region)
 
@@ -27,7 +27,10 @@ def load_pop_csv(csv_path: os.PathLike) -> pd.DataFrame:
 
     df = pd.read_csv(csv_path, index_col=0, header=0)
     df = df.apply(pd.to_numeric)
-    df = df[POP_YEAR][df.index.isin(PROV_NAMES)]
+    if not year in df.columns:
+        raise ValueError(f"Requested year {year} not in {csv_path}. Avail: {df.columns}")
+    
+    df = df[year][df.index.isin(PROV_NAMES)]
     if not sorted(df.index.to_list()) == sorted(PROV_NAMES):
         raise ValueError(
             f"Province names do not match {sorted(df.index.to_list())} != {sorted(PROV_NAMES)}"
@@ -35,17 +38,19 @@ def load_pop_csv(csv_path: os.PathLike) -> pd.DataFrame:
     return df
 
 
-def build_population(data_path: os.PathLike = None):
+def build_population(data_path: os.PathLike,
+        data_unit_conversion = YEARBOOK_DATA2POP,
+        data_year = POP_YEAR):
     """Build the population data by region
 
     Args:
-        data_path (os.PathLike, optional): the path to the pop csv. Defaults to None.
+        data_path (os.PathLike): the path to the pop csv table (province, year).
+        data_unit_conversion (int, optional): unit conversion to head count.
+            Defaults to YEARBOOK_DATA2POP
+        data_year (int, optional): the year to use in the table
     """
 
-    if data_path is None:
-        data_path = snakemake.input.population
-
-    population = YEARBOOK_DATA2POP * load_pop_csv(csv_path=data_path)
+    population = data_unit_conversion * load_pop_csv(csv_path=data_path, data_year)
     population.name = "population"
     population.to_hdf(snakemake.output.population, key=population.name)
 
@@ -55,5 +60,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake("build_population")
 
     configure_logging(snakemake, logger=logger)
-    build_population()
+    conversion_factor = snakemake.params.pop_conversion
+    year = snakemake.params.population_year
+    build_population(snakemake.input.population, conversion_factor, year)
     logger.info("Population successfully built")

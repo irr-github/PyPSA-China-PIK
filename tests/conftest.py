@@ -24,6 +24,44 @@ def set_matplotlib_backend():
     matplotlib.use("Agg")
 
 
+@pytest.fixture(scope="session", autouse=True)
+def setup_plot_mocking():
+    """Auto-mock plotting in all tests if MOCK_PLOTTING env var is set.
+
+    This prevents matplotlib rendering issues in CI/CD and subprocess contexts.
+    Plots will return mock axes objects without actually rendering.
+
+    Usage:
+        # In CI/CD or when running tests
+        export MOCK_PLOTTING=true
+        pytest
+
+        # Or inline
+        MOCK_PLOTTING=true pytest
+    """
+    import os
+    from pandas.plotting import PlotAccessor
+
+    mock_enabled = os.getenv("MOCK_PLOTTING", "false").lower() in ("true", "1", "yes")
+
+    if mock_enabled:
+        # Import the utility
+        import sys
+
+        sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "workflow" / "scripts"))
+        from plot_export_utils import setup_plot_mock_hook
+
+        # Setup mocking (no data export, just return mock axes)
+        remove_hook = setup_plot_mock_hook(PlotAccessor, verbose=False)
+
+        yield  # Tests run here
+
+        # Cleanup
+        remove_hook()
+    else:
+        yield  # No mocking, normal plotting
+
+
 def load_config(config_path: PathLike) -> dict:
     """Load a config file
     Args:

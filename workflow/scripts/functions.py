@@ -14,8 +14,35 @@ from pyproj import transform
 from scipy import interpolate
 from shapely.geometry import Polygon
 
-# TODO make function
-# polynomial centroid for plotting
+
+def calculate_annuity(lifetime: int, discount_rate: float) -> float:
+    """Calculate the annuity factor for an asset with lifetime n years and
+    discount rate of r, e.g. annuity(20, 0.05) * 20 = 1.6
+
+    Args:
+        lifetime (int): ecomic asset lifetime for discounting/NPV calc
+        discount_rate (float): the WACC
+
+    Returns:
+        float: the annuity factor
+    """
+    r = discount_rate
+    n = lifetime
+
+    if isinstance(r, pd.Series):
+        if r.any() < 0:
+            raise ValueError("Discount rate must be positive")
+        if r.any() < 0:
+            raise ValueError("Discount rate must be positive")
+        return pd.Series(1 / n, index=r.index).where(r == 0, r / (1.0 - 1.0 / (1.0 + r) ** n))
+    elif r < 0:
+        raise ValueError("Discount rate must be positive")
+    elif r > 0:
+        return r / (1.0 - 1.0 / (1.0 + r) ** n)
+    else:
+        return 1 / n
+    
+
 def get_poly_center(poly: Polygon):
     """Get the geographic centroid of a polygon geometry.
     
