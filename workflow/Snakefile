@@ -18,6 +18,8 @@ configfile: "config/technology_config.yaml"
 configfile: "config/plot_config.yaml"
 configfile: "config/global_energy_monitor.yaml"
 
+configfile: "config/config.yaml"
+
 # for dev of remind with mocksnakemake, can activate this
 # configfile: "resources/tmp/remind_coupled_cg.yaml"
 
@@ -50,6 +52,7 @@ include: "rules/prepare_remind_coupled.smk"
 include: "rules/postprocess.smk"
 include: "rules/fetch_data.smk"
 include: "rules/visualize_inputs.smk"
+
 
 if config["run"].get("is_test", False):
     localrules: plot_all, plot_summary, plot_snapshots, build_population, dag, fetch_region_shapes, plot_input_costs
@@ -90,6 +93,7 @@ if config['enable'].get('build_cutout', False):
     rule build_cutout:
         params:
             config=config
+        # TODO fix paths?
         input:
             regions_onshore="regions_onshore/dataregions/regions_onshore.geojson",
             regions_offshore="regions_offshore/dataregions/regions_offshore.geojson",
@@ -142,13 +146,13 @@ rule build_shapes:
         "scripts/build_shapes.py"
 
 
-# TODO this is fast so we could build all base networks for all years in one rule, save slurm jobs
 rule base_network:
     """Base Network with buses & edges.
     This is at Admin l2 resolution and not at substation resolution, the assumption
     is that each admin l2 population center has a substation
     FOR NOW take the admin2 centroid as bus location -> could switch to highest density point"""
     params:
+        refyear=2018, # temp for snapshots
         snapshots=config["snapshots"],
         drop_leap_day=True, # False will raise NotImplemented error
         lines_path="resources/data/grids/gem_uhv_with_admin2.csv",
@@ -159,7 +163,7 @@ rule base_network:
         admin_l2_shapes ="resources/data/regions/admin2_shapes.geojson",
         offshore_shapes=DERIVED_COMMON + "/regions/regions_offshore.geojson",
     output:
-        base_network=RESULTS_DIR + "/networks/base_{planning_horizons}.nc",
+        base_network=DERIVED_COMMON + "/networks/base_l2.nc",
     script:
         "scripts/base_network_l2.py"
 
@@ -183,7 +187,27 @@ rule base_network:
 #     script:
 #         "../scripts/build_clustered_population_layouts.py"
 
+rule build_electricity_demand:
+    """build the electricity demand at provincial and base network level"""
+    params:
+        # data_year=2018,
+        distribution_key = {"gdp":0.6, "pop":0.4},
+        config = config,
+        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
+    input:
+        gdp = DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
+        population = DERIVED_COMMON + "/population/pop_distributions.csv",
+        province_codes = "resources/data/regions/province_codes.csv",
+        hrly_regional_elec_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
+    output:
+        # provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
+        base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
+    log: LOG_DIR + "/build_elec_demand.log"
+    script:
+        "scripts/build_elec_demand.py"
 
+# TODO add name database for custom clustering
+cluster_id = config["nodes"].get("custom_name", "")
 rule cluster_network:
     """A simplified clustering based on l2 shapes (341) -> n user clusters
     This will be replaced by PyPSA-EUR clustering when full osm network
@@ -194,33 +218,48 @@ rule cluster_network:
     input:
         admin_l2_shapes ="resources/data/regions/admin2_shapes.geojson",
         offshore_shapes=DERIVED_COMMON + "/regions/regions_offshore.geojson",
-        base_network=RESULTS_DIR + "/networks/base_{planning_horizons}.nc",
+        base_network=DERIVED_COMMON + "/networks/base_l2.nc",
+        #load=DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
     output:
-        clusted_network=RESULTS_DIR + "/networks/base_clustered_{planning_horizons}.nc",
-        busmap = RESULTS_DIR + "/networks/busmap_clustered_{planning_horizons}.csv",
-        regions_offshore=RESULTS_DIR + "/regions/regions_offshore_clustered_{planning_horizons}.geojson",
-        regions_onshore=RESULTS_DIR + "/regions/regions_onshore_clustered_{planning_horizons}.geojson",
+        clustered_network=DERIVED_COMMON + f"/networks/base_clustered_s_{cluster_id}.nc",
+        busmap = DERIVED_COMMON + f"/networks/busmap_clustered_s_{cluster_id}.csv",
+        regions_offshore=DERIVED_COMMON + f"/regions/regions_offshore_s_{cluster_id}.geojson",
+        regions_onshore=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
     script:
         "scripts/cluster_network_l2.py"
 
 
-# TODO merge all techs into a single csv
-# TODO add node wildcard/id
-brownfield_techs = config["existing_capacities"]["techs"]
 rule build_powerplants:
     """ Groups power plants by node"""
     params:
-        nodes = config["nodes"],
         gem = config["global_energy_monitor_plants"],
+        technologies = config["existing_capacities"]["techs"],
+        grouped_years = config["existing_capacities"]["grouping_years"],
+        config = config,
     input:
         GEM_plant_tracker="resources/data/existing_infrastructure/gem_data_raw/Global-integrated-Plant-Tracker-July-2025_china.xlsx",
-        nodes="resources/data/regions/provinces_onshore.geojson",
+        nodes=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
+        offshore_nodes=DERIVED_COMMON + f"/regions/regions_offshore_s_{cluster_id}.geojson",
+        network=DERIVED_COMMON + f"/networks/base_clustered_s_{cluster_id}.nc",
     output:
-        **{tech : DERIVED_COMMON + f"/existing_infrastructure/{tech}_capacity.csv" for tech in brownfield_techs},
-    log: LOGS_COMMON + "/build_powerplants.log"
+        cleaned_ppls = DERIVED_COMMON + f"/existing_infrastructure/capacity_cleaned.csv",
     threads: 2 #TODO 1?
     script: "scripts/build_powerplants.py"
 
+
+rule add_electricity:
+    """ Add generators and links to clustered network"""
+    params:
+        config = config,
+        snapshots=config["snapshots"],
+        CHP_to_elec = not config.get("heat_coupling", False),
+    input:
+        costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
+        elec_projections=DERIVED_COMMON + "/load/electricity_projections_{planning_horizons}.csv",
+        clustered_network=DERIVED_COMMON + f"/networks/base_clustered_s_{cluster_id}.nc",
+        powerplants=DERIVED_COMMON + "/existing_infrastructure/capacity_cleaned.csv",
+    output:
+        elec_network=DERIVED_COMMON + "/networks/clustered_network_elec_{planning_horizons}.nc",
 
 # TODO find a way to turn off if heat coupling is off 
 rule build_solar_thermal_profiles:
@@ -233,7 +272,8 @@ rule build_solar_thermal_profiles:
     log: LOGS_COMMON + "/build_solar_thermal_profiles.log"
     threads: 8
     resources: mem_mb=30000
-#     script: "scripts/build_solar_thermal_profiles.py"
+    script: "scripts/build_solar_thermal_profiles.py"
+
 
 rule build_temperature_profiles:
     params:
@@ -317,26 +357,6 @@ rule build_renewable_profiles:
         "scripts/build_renewable_profiles.py"
 
 
-rule build_electricity_demand:
-    """build the electricity demand at provincial and base network level"""
-    params:
-        # data_year=2018,
-        distribution_key = {"gdp":0.6, "pop":0.4},
-        config = config,
-        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
-    input:
-        gdp = DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
-        population = DERIVED_COMMON + "/population/pop_distributions.csv",
-        province_codes = "resources/data/regions/province_codes.csv",
-        hrly_regional_elec_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
-    output:
-        # provincial_load = DERIVED_DATA + "/load/provincial_hrly_elec_load.h5",
-        base_network_load = DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
-    log: LOG_DIR + "/build_elec_demand.log"
-    script:
-        "scripts/build_elec_demand.py"
-
-
 # # TODO check whether energy totals still needed
 rule build_load_profiles:
     params:
@@ -362,6 +382,7 @@ rule build_load_profiles:
     resources: mem_mb = ATLITE_NPROCESSES * 5000
     script: "scripts/build_load_profiles.py"
 
+
 rule build_biomass_potential:
     input:
         # from doi.org/10.1038/s41467-021-23282-x
@@ -374,9 +395,9 @@ rule build_biomass_potential:
     resources: mem_mb = ATLITE_NPROCESSES * 5000
     script: "scripts/build_biomass_potential.py"
 
-# # TODO add node wildcard/id
-# # NOTE: lifetimes are for the BASEYEAR and not brownfield construction year DateIn!
-# #       This could be changed if costs are merged into a single file
+# TODO move into add electricity
+# NOTE: lifetimes are for the BASEYEAR and not brownfield construction year DateIn!
+#       This could be changed if costs are merged into a single file
 rule prepare_baseyear_capacities:
     """prepare inputs for add_existing_baseyear (optional in overnight mode)"""
     params:
@@ -385,10 +406,9 @@ rule prepare_baseyear_capacities:
     input:
         # historical lifetimes from base year technoeconomic data
         tech_costs=path_manager.costs_dir() + f"/costs_{BASEYEAR}.csv",
-        **{f"{tech}": DERIVED_COMMON + f"/existing_infrastructure/{tech}_capacity.csv"
-            for tech in config['existing_capacities']['techs']},
+        cleaned_ppls = DERIVED_COMMON + "/existing_infrastructure/capacity_cleaned.csv",
     output: 
-        installed_capacities = DERIVED_DATA+ '/existing_infrastructure/capacities.csv',
+        installed_capacities = DERIVED_DATA + '/existing_infrastructure/capacities_{planning_horizons}.csv',
     threads: 1
     resources: mem_mb=2000
     script: "scripts/prepare_existing_capacities.py"

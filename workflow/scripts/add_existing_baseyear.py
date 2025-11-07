@@ -17,7 +17,7 @@ import pandas as pd
 import pypsa
 from _helpers import configure_logging, mock_snakemake
 from _pypsa_helpers import shift_profile_to_planning_year
-from add_electricity import load_costs
+from readers import load_costs
 from constants import YEAR_HRS
 
 # TODO possibly reimplement to have env separation

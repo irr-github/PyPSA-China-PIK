@@ -6,141 +6,25 @@ Misc collection of functions supporting network prep
 import logging
 from os import PathLike
 
+import geopandas as gpd
+
 import pandas as pd
 import pypsa
-from _pypsa_helpers import rename_techs
+from _helpers import mock_snakemake, configure_logging
+from functions import calculate_annuity
+from _pypsa_helpers import (
+    assign_locations,
+    make_periodic_snapshots,
+    shift_profile_to_planning_year,
+    rename_techs
+)
+from readers import load_costs
 from constants import NICE_NAMES_DEFAULT
 
-idx = pd.IndexSlice
+
 logger = logging.getLogger(__name__)
 
 
-def calculate_annuity(lifetime: int, discount_rate: float) -> float:
-    """Calculate the annuity factor for an asset with lifetime n years and
-    discount rate of r, e.g. annuity(20, 0.05) * 20 = 1.6
-
-    Args:
-        lifetime (int): ecomic asset lifetime for discounting/NPV calc
-        discount_rate (float): the WACC
-
-    Returns:
-        float: the annuity factor
-    """
-    r = discount_rate
-    n = lifetime
-
-    if isinstance(r, pd.Series):
-        if r.any() < 0:
-            raise ValueError("Discount rate must be positive")
-        if r.any() < 0:
-            raise ValueError("Discount rate must be positive")
-        return pd.Series(1 / n, index=r.index).where(r == 0, r / (1.0 - 1.0 / (1.0 + r) ** n))
-    elif r < 0:
-        raise ValueError("Discount rate must be positive")
-    elif r < 0:
-        raise ValueError("Discount rate must be positive")
-    elif r > 0:
-        return r / (1.0 - 1.0 / (1.0 + r) ** n)
-    else:
-        return 1 / n
-
-
-# TODO fix docstring and change file + IO
-def load_costs(
-    tech_costs: PathLike,
-    cost_config: dict,
-    elec_config: dict,
-    cost_year: int,
-    n_years: int,
-    econ_lifetime=40,
-) -> pd.DataFrame:
-    """Calculate the anualised capex costs and OM costs for the technologies based on the input data
-
-    Args:
-        tech_costs (PathLike): the csv containing the costs
-        cost_config (dict): the snakemake pypsa-china cost config
-        elec_config (dict): the snakemake pypsa-china electricity config
-        cost_year (int): the year for which the costs are retrived
-        n_years (int): the # of years represented by the snapshots/investment period
-        econ_lifetime (int, optional): the max lifetime over which to discount. Defaults to 40.
-
-    Returns:
-        pd.DataFrame: costs dataframe in [CURRENCY] per MW_ ... or per MWh_ ...
-    """
-
-    # set all asset costs and other parameters
-    costs = pd.read_csv(tech_costs, index_col=list(range(3))).sort_index()
-    costs.fillna(" ", inplace=True)
-    # correct units to MW and EUR
-    costs.loc[costs.unit.str.contains("/kW"), "value"] *= 1e3
-    costs.loc[costs.unit.str.contains("USD"), "value"] *= cost_config["USD2013_to_EUR2013"]
-    costs.loc[costs.unit.str.contains("USD"), "value"] *= cost_config["USD2013_to_EUR2013"]
-
-    cost_year = float(cost_year)
-    costs = (
-        costs.loc[idx[:, cost_year, :], "value"]
-        .unstack(level=2)
-        .groupby("technology")
-        .sum(min_count=1)
-    )
-
-    # TODO set default lifetime as option
-    if "discount rate" not in costs.columns:
-        costs.loc[:, "discount rate"] = cost_config["discountrate"]
-    costs = costs.fillna(
-        {
-            "CO2 intensity": 0,
-            "FOM": 0,
-            "VOM": 0,
-            "discount rate": cost_config["discountrate"],
-            "efficiency": 1,
-            "hist_efficiency": 1,  # represents brownfield efficiency state, only useful for links
-            "fuel": 0,
-            "investment": 0,
-            "lifetime": 25,
-        }
-    )
-
-    discount_period = costs["lifetime"].apply(lambda x: min(x, econ_lifetime))
-    costs["capital_cost"] = (
-        (calculate_annuity(discount_period, costs["discount rate"]) + costs["FOM"] / 100.0)
-        * costs["investment"]
-        * n_years
-    )
-
-    costs.at["OCGT", "fuel"] = costs.at["gas", "fuel"]
-    costs.at["CCGT", "fuel"] = costs.at["gas", "fuel"]
-    costs.at["CCGT-CCS", "fuel"] = costs.at["gas", "fuel"]
-
-    costs["marginal_cost"] = costs["VOM"] + costs["fuel"] / costs["efficiency"]
-
-    costs = costs.rename(columns={"CO2 intensity": "co2_emissions"})
-
-    costs.at["OCGT", "co2_emissions"] = costs.at["gas", "co2_emissions"]
-    costs.at["CCGT", "co2_emissions"] = costs.at["gas", "co2_emissions"]
-
-    def costs_for_storage(store, link1, link2=None, max_hours=1.0):
-        capital_cost = link1["capital_cost"] + max_hours * store["capital_cost"]
-        if link2 is not None:
-            capital_cost += link2["capital_cost"]
-        return pd.Series(dict(capital_cost=capital_cost, marginal_cost=0.0, co2_emissions=0.0))
-
-    max_hours = elec_config["max_hours"]
-    costs.loc["battery"] = costs_for_storage(
-        costs.loc["battery storage"], costs.loc["battery inverter"], max_hours=max_hours["battery"]
-    )
-
-    for attr in ("marginal_cost", "capital_cost"):
-        overwrites = cost_config.get(attr)
-        overwrites = cost_config.get(attr)
-        if overwrites is not None:
-            overwrites = pd.Series(overwrites)
-            costs.loc[overwrites.index, attr] = overwrites
-
-    return costs
-
-
-# TODO understand why this is in make_summary but not in the main optimisation
 # TODO understand why this is in make_summary but not in the main optimisation
 def update_transmission_costs(n, costs, length_factor=1.0):
     # TODO: line length factor of lines is applied to lines and links.
@@ -222,3 +106,34 @@ def sanitize_carriers(n: pypsa.Network, config: dict) -> None:
         missing_i = list(colors.index[colors.isna()])
         logger.warning(f"tech_colors for carriers {missing_i} not defined in config.")
     n.carriers["color"] = n.carriers.color.where(n.carriers.color != "", colors)
+
+
+
+if "snakemake" not in globals():
+    snakemake = mock_snakemake(
+        "prepare_networks",
+        topology="current+FCG",
+        co2_pathway="exp175default",
+        # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+        planning_horizons=2025,
+        heating_demand="positive",
+        # configfiles="resources/tmp/pseudo-coupled.yaml",
+    )
+
+    configure_logging(snakemake)
+
+    # if not node_cfg["split_provinces"]:
+    #     assign_mode = "simple"
+    #     cleaned["node"] = cleaned[ADM_LVL1]
+    # elif assign_mode == "simple":
+    #     splits_inv = {}  # invert to get admin2 -> node
+    #     for admin1, splits in node_cfg["splits"].items():
+    #         splits_inv.update({vv: admin1 + "_" + k for k, v in splits.items() for vv in v})
+    #     cleaned["node"] = cleaned[ADM_LVL2].map(splits_inv).fillna(cleaned[ADM_LVL1])
+    # else:
+    #     if config["fetch_regions"]["simplify_tol"]["land"] > 0.05:
+    #         logger.warning(
+    #             "Using GPS assignment for existing capacities with land simplify_tol > 0.05. "
+    #             "This may lead to inaccurate assignments (eg. Shanxi vs InnerMongolia coal power)."
+    #         )
+    #     cleaned["node"] = assign_node_from_gps(cleaned, nodes)

@@ -25,6 +25,8 @@ COMPONENT_MAPPING = {
     "transformer": "transformers",
 }
 
+YEAR_HRS = 8760
+
 
 def aggregate_costs(
     n: pypsa.Network,

@@ -8,8 +8,6 @@ This script is intended for use as part of the Snakemake workflow.
 The GEM data has to be downloaded manually and placed in the source directory of the snakemake rule.
 download page: https://globalenergymonitor.org/projects/global-integrated-power-tracker/download-data/
 
-Nodes can be assigned to specific GEM IDs based on their GPS location or administrative region location.
-
 """
 
 import logging
@@ -76,7 +74,13 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
     GEM.rename(columns={"Plant _ Project name": "Plant name"}, inplace=True)
     GEM.loc[:, "Retired year"] = GEM["Retired year"].replace("not found", np.nan)
     GEM.loc[:, "Start year"] = GEM["Start year"].replace("not found", np.nan)
-    GEM = GEM[gem_cfg["relevant_columns"]]
+    keep = [col for col in gem_cfg["relevant_columns"] if col in GEM.columns]
+    skipped = set(gem_cfg["relevant_columns"]) - set(keep)
+    if skipped:
+        logger.warning(
+            f"The following relevant columns were not found in the GEM data and will be skipped: {skipped}"
+        )
+    GEM = GEM[keep]
 
     # Remove whitespace from admin columns
     # Remove all whitespace (including tabs, newlines) from admin columns
@@ -125,7 +129,7 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
     return GEM.dropna(subset=["Type"])
 
 
-def group_by_year(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.DataFrame:
+def assign_year_bins(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.DataFrame:
     """
     Group the DataFrame by year bins.
 
@@ -143,79 +147,90 @@ def group_by_year(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.DataF
     df = df[df["Retired year"].isna() | (df["Retired year"] > base_year)].reset_index(drop=True)
     df["grouping_year"] = np.take(year_bins, np.digitize(df["Start year"], year_bins, right=True))
 
+    # check the grouping years are appropriate
+    newer_assets = (df["Start year"] > max(year_bins)).sum()
+    if newer_assets:
+        raise ValueError(
+            f"There are {newer_assets} assets with build year "
+            f"after last power grouping year {max(year_bins)}. "
+            "These assets will be dropped and not considered."
+            "Redefine the grouping years to keep them or"
+            " remove pre-construction/construction/... state from options."
+        )
+
     return df
 
 
-def assign_node_from_gps(gem_data: pd.DataFrame, nodes: gpd.GeoDataFrame) -> pd.DataFrame:
+def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_nodes: gpd.GeoDataFrame) -> pd.DataFrame:
     """
-    Assign plant node based on GPS coordinates of the plant.
-    Will cause issues if the nodes tolerance is too low
+    Assign plant node based on GPS coordinates with robust boundary handling.
+    
+    spatial join within first, then nearest neighbor fallback
+    (catches powerplants that fall on cluster boundaries due to precision issues.)
 
     Args:
-        gem_data (pd.DataFrame): GEM data
-        nodes (gpd.GeoDataFrame): node geometries (nodes as index).
-
+        ppl (pd.DataFrame): Powerplants data with Latitude/Longitude columns
+        nodes (gpd.GeoDataFrame): Node shape geometries with "cluster" and "geometry" columns
+        offshore_nodes (gpd.GeoDataFrame): Offshore node shapes for offshore plants
     Returns:
-        pd.DataFrame: DataFrame with assigned nodes.
+        pd.DataFrame: DataFrame with assigned nodes and diagnostic columns
     """
+    import logging
+    logger = logging.getLogger(__name__)
 
-    gem_data["geometry"] = gem_data.apply(
-        lambda row: Point(row["Longitude"], row["Latitude"]), axis=1
+    # Create GeoDataFrame from lat/lon, project to metric CRS
+    gdf = gpd.GeoDataFrame(
+        ppl, 
+        geometry=ppl.apply(lambda row: Point(row["Longitude"], row["Latitude"]), axis=1),
+        crs="EPSG:4326"
     )
-    gem_gdf = gpd.GeoDataFrame(gem_data, geometry="geometry", crs="EPSG:4326")
+    # manual fix to make clearly not shanghai
+    gdf.query("`Plant name`=='Jiangsu Rudong (China Guangdong Nuclear) Offshore wind farm'").Latitude = 32.8
+    gdf_proj = gdf.to_crs("EPSG:3036")
+    nodes_proj = nodes.to_crs("EPSG:3036")
 
-    joined = nodes.reset_index(names="node").sjoin_nearest(gem_gdf, how="right")
-    missing = joined[joined.node.isna()]
-    if not missing.empty:
-        logger.warning(
-            f"Some GEM locations are not covered by the nodes at GPS: {missing['Plant name'].head()}"
+    # First pass: spatial join within
+    assigned = gdf.sjoin(nodes, predicate="within", how="left")
+    # Identify unassigned (likely on boundaries)
+    unassigned_mask = assigned['cluster'].isna()
+    if unassigned_mask.any():
+        logger.info(
+            f"Assigning {unassigned_mask.sum()} boundary powerplants via nearest neighbor"
         )
-    return joined
 
+        # Get original indices of unassigned powerplants
+        unassigned_indices = assigned[unassigned_mask].index
+        unassigned_ppls = gdf_proj.loc[unassigned_indices]
 
-# FUTURE FEATURE: Partition GEM data across nodes based on admin level or GPS.
-# def partition_gem_across_nodes(
-#     gem_data: pd.DataFrame, nodes: gpd.GeoDataFrame, admin_level=None
-# ) -> pd.DataFrame:
-#     """
-#     Partition GEM data across nodes based on geographical coordinates.
-#
-#     Args:
-#         gem_data (pd.DataFrame): DataFrame containing GEM data.
-#         nodes (geopandas.GeoDataFrame): GeoDataFrame containing node geometries (nodes as index).
-#         admin_level (int, optional): Administrative level for partitioning. Default is None (GPS).
-#
-#     Returns:
-#         pd.DataFrame: DataFrame with GEM data partitioned across nodes.
-#     """
-#     if admin_level is not None and admin_level not in [0, 1, 2]:
-#         raise ValueError("admin_level must be None, 0, 1, or 2")
-#
-#     # snap to admin_level
-#     if admin_level is not None:
-#         admin = ADM_COLS[admin_level]
-#         gem_data[admin] = gem_data[admin].str.replace(" ", "")
-#         uncovered_gem = set(gem_data[ADM_COLS[admin_level]]) - set(nodes.index)
-#         if uncovered_gem:
-#             logger.warning(
-#                 f"Some GEM locations are not covered by the nodes at admin level {admin_level}: {uncovered_gem}"
-#                 ". Consider partitioning with at a different admin_level or with GPS (None)."
-#             )
-#         gem_data["node"] = gem_data[admin]
-#         gem_data.dropna(subset=["node"], inplace=True)
-#         return gem_data
-#     else:
-#         gem_data["geometry"] = gem_data.apply(
-#             lambda row: Point(row["Longitude"], row["Latitude"]), axis=1
-#         )
-#         gem_gdf = gpd.GeoDataFrame(gem_data, geometry="geometry", crs="EPSG:4326")
-#         joined = nodes.reset_index(names="node").sjoin_nearest(gem_gdf, how="right")
-#         missing = joined[joined.node.isna()]
-#         if not missing.empty:
-#             logger.warning(
-#                 f"Some GEM locations are not covered by the nodes at GPS: {missing['Plant name'].head()}"
-#             )
-#         return joined["node"]
+        # fallback: nearest
+        nearest_assigned = unassigned_ppls.sjoin_nearest(
+            nodes_proj.to_crs("EPSG:3036"),
+            how="left",
+            max_distance=10000,  # 10km sanity check
+            distance_col="boundary_distance_m"
+        )
+        assigned.loc[unassigned_mask, "cluster"] = nearest_assigned["cluster"]
+        
+    # Try offshore shapes (wind turbines and)
+    still_unassigned = assigned['cluster'].isna()
+    assigned_offshore = assigned.loc[still_unassigned].sjoin_nearest(
+        offshore_nodes.reset_index().to_crs("EPSG:3036"),
+        how="left",
+        distance_col="boundary_distance_m",
+        max_distance=300000) # 300km sanity check
+    # ugly hack in case at (inexact) border, flip coin
+    idx = assigned_offshore.index.drop_duplicates()
+    assigned.loc[still_unassigned, 'cluster'] = assigned_offshore.loc[idx, 'cluster_right'].values
+
+    # Report issues
+    still_unassigned = assigned['cluster'].isna().sum()
+    if still_unassigned > 0:
+        logger.error(f"{still_unassigned} powerplants still unassigned after fallback!")
+        failed_plants = assigned[assigned['cluster'].isna()]['Plant name'].tolist()
+        logger.error(f"Failed plants: {failed_plants[:5]}...")
+        
+    return assigned.drop(columns=['geometry', 'index_right'], errors='ignore')
+
 
 
 if __name__ == "__main__":
@@ -230,21 +245,20 @@ if __name__ == "__main__":
 
     configure_logging(snakemake, logger=logger)
 
-    config = snakemake.config
-    cfg_GEM = config["global_energy_monitor_plants"]
-    output_paths = dict(snakemake.output.items())
+    config = snakemake.params.config
     params = snakemake.params
+    cfg_GEM = params["global_energy_monitor_plants"]
+    grouped_years = params["grouped_years"]
+    output_paths = dict(snakemake.output.items())
 
-    # TODO add offsore for offsore wind
-    nodes = gpd.read_file(snakemake.input.nodes)
     gem_data = load_gem_excel(snakemake.input.GEM_plant_tracker, sheetname="Power facilities")
 
     cleaned = clean_gem_data(gem_data, cfg_GEM)
-    cleaned = group_by_year(
-        cleaned, config["existing_capacities"]["grouping_years"], base_year=cfg_GEM["base_year"]
+    cleaned = assign_year_bins(
+        cleaned, grouped_years, base_year=cfg_GEM["base_year"]
     )
 
-    processed, requested = cleaned.Type.unique(), set(output_paths.keys())
+    processed, requested = cleaned.Type.unique(), set(snakemake.params.technologies)
     missing = requested - set(processed)
     extra = set(processed) - requested
     if missing:
@@ -254,41 +268,13 @@ if __name__ == "__main__":
     if extra:
         logger.warning(f"Techs from GEM {extra} not covered by existing_baseyear techs.")
 
-    # TODO assign nodes (for sub-province level, eg. county or GPS/arbitrary point)
-    assign_mode = config["existing_capacities"].get("node_assignment", "simple")
-    node_cfg = config["nodes"]
+    # assign buses
+    nodes = gpd.read_file(snakemake.input.nodes)
+    offshore_nodes = gpd.read_file(snakemake.input.offshore_nodes)
+    ppls = assign_node_from_gps(cleaned, nodes, offshore_nodes)
 
-    if not node_cfg["split_provinces"]:
-        assign_mode = "simple"
-        cleaned["node"] = cleaned[ADM_LVL1]
-    elif assign_mode == "simple":
-        splits_inv = {}  # invert to get admin2 -> node
-        for admin1, splits in node_cfg["splits"].items():
-            splits_inv.update({vv: admin1 + "_" + k for k, v in splits.items() for vv in v})
-        cleaned["node"] = cleaned[ADM_LVL2].map(splits_inv).fillna(cleaned[ADM_LVL1])
-    else:
-        if config["fetch_regions"]["simplify_tol"]["land"] > 0.05:
-            logger.warning(
-                "Using GPS assignment for existing capacities with land simplify_tol > 0.05. "
-                "This may lead to inaccurate assignments (eg. Shanxi vs InnerMongolia coal power)."
-            )
-        cleaned["node"] = assign_node_from_gps(cleaned, nodes)
-
-    # build and export files
-    datasets = {tech: cleaned[cleaned.Type == tech] for tech in requested}
-    for name, ds in datasets.items():
-        df = (
-            ds.pivot_table(
-                columns="grouping_year", index="node", values="Capacity (MW)", aggfunc="sum"
-            )
-            .fillna(0)
-            .astype(int)
-        )
-
-        # sanity checks
-        logger.debug(f"GEM Dataset for pypsa-tech {name}: has techs \n\t{ds.Technology.unique()}")
-
-        df.to_csv(output_paths[name])
-        logger.info(f"cap for {name} {df.sum().sum()/1000}")
-
-    logger.info(f"GEM capacities saved to {os.path.dirname(output_paths[name])}")
+    ppls.to_csv(
+        output_paths["cleaned_ppls"],
+        index=False,
+    )
+    logger.info(f"Cleaned GEM capacities saved to {output_paths['cleaned_ppls']}")
