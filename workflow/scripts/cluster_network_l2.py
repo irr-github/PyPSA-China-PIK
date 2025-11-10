@@ -163,7 +163,7 @@ def update_bus_coordinates(
     n.buses["y"] = busmap_df["y"].values
 
     # Drop admin-level columns
-    n.buses.drop(columns=["prefecture","prefecture_cn"], inplace=True)
+    n.buses.drop(columns=["prefecture", "prefecture_nl"], inplace=True)
 
 
 def clustering_for_busmap(
