@@ -49,19 +49,20 @@ def build_capacities(powerplant_table: pd.DataFrame, cost_data: pd.DataFrame) ->
         pd.DataFrame: DataFrame with existing capacities
     """
 
+    powerplant_table.rename(columns={"capacity": "Capacity", "Type": "Fueltype"}, inplace=True)
+
     df = powerplant_table.merge(cost_data, how="left", left_on=["Tech"], right_index=True)
-    df2 = powerplant_table.merge(cost_data, how = "left", left_on = ["Type"], right_index=True)
+    df2 = powerplant_table.merge(cost_data, how = "left", left_on = ["Fueltype"], right_index=True)
     missed = df.capital_cost.isna()
     df.loc[missed, :] = df2.loc[missed, :]
     still_missed = df.loc[df.capital_cost.isna()]
 
     if not still_missed.empty:
-        missed_techs = still_missed.Type.unique() + still_missed.Tech.unique()
+        missed_techs = still_missed.Fueltype.unique() + still_missed.Tech.unique()
         raise ValueError(f"Cost Data could not be found for requested existing techs or types {missed_techs}")
 
     carrier = {k: v for k, v in CARRIER_MAP.items() if k in techs}
-    df.rename(columns={"capacity": "Capacity", "Type":"Fueltype"}, inplace=True)
-    df["Tech"]= df["Fueltype"].map(carrier)
+    df["Tech"] = df["Fueltype"].map(carrier)
     df["DateIn"] = df["grouping_year"]
     df["lifetime"] = df["lifetime"].astype(int)
     df["DateOut"] = df["DateIn"].astype(int) + df["lifetime"]
@@ -101,7 +102,7 @@ def load_powerplants(path: os.PathLike, plan_year: int) -> pd.DataFrame:
 
     Args:
         path (os.PathLike): path to the cleaned powerplant csv
-        plan_year (int): the model year 
+        plan_year (int): the model year
 
     Returns:
         pd.DataFrame: DataFrame with cleaned powerplant data
@@ -120,7 +121,8 @@ def load_powerplants(path: os.PathLike, plan_year: int) -> pd.DataFrame:
         .astype(int)
     ).stack().reset_index()
     ppl_table["Tech"] = ppl_table.Type.map(CARRIER_MAP)
-    return ppl_table.rename(columns={0:"capacity"})
+
+    return ppl_table.rename(columns={0: "Capacity"})
 
 
 if __name__ == "__main__":
@@ -129,7 +131,7 @@ if __name__ == "__main__":
             "prepare_baseyear_capacities",
             topology="current+FCG",
             co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            planning_horizons="2020",
+            planning_horizons="2025",
             heating_demand="positive",
             # configfiles="resources/tmp/pseudo_coupled.yml",
         )
@@ -143,7 +145,6 @@ if __name__ == "__main__":
     baseyear = min([int(y) for y in config["scenario"]["planning_horizons"]])
     tech_costs = snakemake.input.tech_costs
     data_paths = {k: v for k, v in snakemake.input.items()}
-    cleaned_ppls = pd.read_csv(snakemake.input.cleaned_ppls, index_col=0)
 
     n_years = determine_simulation_timespan(snakemake.config, baseyear)
     costs = load_costs(tech_costs, config["costs"], config["electricity"], baseyear, n_years)

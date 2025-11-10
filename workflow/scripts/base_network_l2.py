@@ -71,13 +71,14 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
         columns={
             "Technology": "type",
             "Capacity (MW)": "p_nom",
+            "Transmission Distance（km）": "length"
         },
         inplace=True,
     )
     # TODO calculate capital cost using NPV and GEM investment cost & length. Convert to EUR/MW
     gem_lines = gem_lines[
         [
-            "Transmission Distance（km）",
+            "length",
             "p_nom",
             "Status",
             "Start_Admin2",
@@ -93,7 +94,7 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
     gem_lines["p_nom"] = gem_lines.apply(
         lambda row: 0 if row["Status"] == "proposed" else row["p_nom"], axis=1
     )
-
+    # TODO convert currency and apply NPV to get capital cost per km per W
     return gem_lines
 
 
@@ -191,7 +192,8 @@ def _set_uhv_lines(network: pypsa.Network, lines: pd.DataFrame, buses: pd.DataFr
         raise ValueError(f"The following UHV lines have unmatched buses: {not_matched}")
 
     lines_ = lines[[c for c in lines.columns if c in network.links.columns]]
-    network.add("Link", lines_.index, **lines_)
+    # FAKE CARRIER -> change if you have full network resolution
+    network.add("Link", lines_.index, **lines_, carrier="AC")
 
 
 def _set_shapes(

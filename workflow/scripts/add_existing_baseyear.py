@@ -140,6 +140,7 @@ def add_existing_vre_capacities(
     tech_map = {k: tech_map[k] for k in tech_map if k in config["Techs"]["vre_techs"]}
 
     # historical data by tech, location and build year
+    vre_caps.rename(columns={"cluster": "bus"}, inplace=True)
     grouped_vre = vre_caps.groupby(["Tech", "bus", "DateIn"]).Capacity.sum()
     vre_df = grouped_vre.unstack().reset_index()
     df_agg = pd.DataFrame()
@@ -746,7 +747,7 @@ if __name__ == "__main__":
             "add_existing_baseyear",
             topology="current+FCG",
             co2_pathway="exp175default",
-            planning_horizons="2030",
+            planning_horizons="2025",
             # configfiles="resources/tmp/pseudo_coupled.yml",
             heating_demand="positive",
         )
@@ -779,7 +780,7 @@ if __name__ == "__main__":
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)
 
     # TODO check needed for coupled mode
-    existing_capacities = filter_brownfield_capacities(existing_capacities, plan_year)
+    # existing_capacities = filter_brownfield_capacities(existing_capacities, plan_year)
     # In coupled mode, capacities from REMIND are passed to PyPSA for each plan year.
     #  The harmonized capacities file then has an extra 'year' column to keep track
     #  of the model year (needed because REMIND can actively retire). Select year here
