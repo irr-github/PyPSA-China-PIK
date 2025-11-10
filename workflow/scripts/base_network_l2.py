@@ -116,7 +116,7 @@ def add_hv_for_sparse_regions(network: pypsa.Network, hv_data: pd.DataFrame):
     pass
 
 
-def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid") -> pd.DataFrame:
+def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid", country = "CN") -> pd.DataFrame:
     """Build admin level 2 buses from admin_l2_shapes geodataframe centers
 
     Args:
@@ -133,10 +133,12 @@ def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid") ->
                 "y": admin_l2_shapes.geometry.centroid.y,
                 "province": admin_l2_shapes.NAME_1,
                 "prefecture": admin_l2_shapes.NAME_2,
-                "prefecture_cn": admin_l2_shapes.NL_NAME_2,
+                "prefecture_nl": admin_l2_shapes.NL_NAME_2,
+                "country": country,
             },
         )
         return buses
+    
     elif center == "representative_point":
         buses = pd.DataFrame(
             index=admin_l2_shapes.index,
@@ -145,7 +147,7 @@ def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid") ->
                 "y": admin_l2_shapes.geometry.representative_point().y,
                 "province": admin_l2_shapes.NAME_1,
                 "prefecture": admin_l2_shapes.NAME_2,
-                "prefecture_cn": admin_l2_shapes.NL_NAME_2,
+                "prefecture_nl": admin_l2_shapes.NL_NAME_2,
             },
         )
         return buses
@@ -229,7 +231,7 @@ def _set_snapshots(network: pypsa.Network, snapshot_cfg: dict, yr: int):
     """
     snapshots = make_periodic_snapshots(
         year=yr,
-        freq=snapshot_cfg["freq"],
+        freq=1,  # apply time resolution later
         start_day_hour=snapshot_cfg["start"],
         end_day_hour=snapshot_cfg["end"],
         bounds=snapshot_cfg["bounds"],
@@ -247,6 +249,19 @@ def build_base_network(
     snapshot_config: dict,
     year: int,
 ) -> pypsa.Network:
+    """Build the base network at admin level 2 resolution.
+
+    Args:
+        admin_l2_shapes (gpd.GeoDataFrame): the admin level 2 shapes
+        prov_shapes (gpd.GeoDataFrame): the province shapes
+        offshore_shapes (gpd.GeoDataFrame): the offshore shapes
+        lines (pd.DataFrame): the UHV line data
+        snapshot_config (dict): the snapshot configuration
+        year (int): the model year
+    Returns:
+        pypsa.Network: the base network at admin l2 resolution
+    """
+    
     _validate_line_regions(lines, admin_l2_shapes)
 
     network = pypsa.Network(name="Base Network")

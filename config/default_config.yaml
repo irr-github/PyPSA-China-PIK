@@ -5,6 +5,7 @@
 
 run:
   name: "unamed_default_run"
+  is_test: false # used for pytest runs
 foresight: "overnight"
 
 paths:
@@ -178,7 +179,7 @@ Techs:
   coal_ccs_retrofit: false # currently myopic pathway only.  CC = co2 cap 
 
 ## add components (overwrites vre tech choice)
-heat_coupling: true
+heat_coupling: false
 add_biomass: True
 add_hydro: True
 add_H2: True
@@ -308,7 +309,7 @@ existing_capacities:
   grouping_years: [1985, 1990, 1995, 2000, 2005, 2010, 2015, 2020, 2025, 2030, 2035, 2040, 2045, 2050, 2055, 2060]
   collapse_years: True # Treat as a single unit when preparing & solving network 
   threshold_capacity: 80 # MW
-  techs: ['coal','CHP coal', 'CHP gas', 'OCGT', 'CCGT', 'solar', 'onwind', 'offwind', 'nuclear', "PHS"]
+  techs: ['coal','CHP coal', 'CHP gas', 'OCGT', 'CCGT', 'solar', 'onwind', 'offwind', 'nuclear', "PHS", "hydro"]
   node_assignment: simple # simple | gps
 
 

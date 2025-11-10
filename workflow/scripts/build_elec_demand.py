@@ -50,6 +50,7 @@ def read_historical_data(
     hourly_MWh.columns = hourly_MWh.columns.map(prov_codes["Full name"])
     return hourly_MWh
 
+
 def shapes_to_shapes(orig: gpd.GeoSeries, dest: gpd.GeoSeries) -> sp.lil_matrix:
     """
     Adopted from vresutils.transfer.Shapes2Shapes()
@@ -111,52 +112,13 @@ def upsample_load(
         data_arrays.append(
             xr.DataArray(
                 factors.values * load_prov.values[:, np.newaxis],
-                dims=["time", "bus"],
-                coords={"time": load_prov.index.values, "bus": factors.index.values},
+                dims=["time", "Bus"],
+                coords={"time": load_prov.index.values, "Bus": factors.index.values},
             )
         )
 
-    return xr.concat(data_arrays, dim="bus")
+    return xr.concat(data_arrays, dim="Bus")
 
-
-# def project_elec_demand(
-#     hourly_demand_base_yr_MWh: pd.DataFrame,
-#     yearly_projections_MWh: pd.DataFrame,
-#     year=2020,
-# ) -> pd.DataFrame:
-#     """Project the hourly demand to the future years
-
-#     Args:
-#         hourly_demand_base_yr_MWh (pd.DataFrame): the hourly demand in the base year
-#         yearly_projections_MWh (pd.DataFrame): the yearly projections
-
-#     Returns:
-#         pd.DataFrame: the projected hourly demand
-#     """
-#     hourly_load_profile = hourly_demand_base_yr_MWh.loc[:, PROV_NAMES]
-#     # normalise the hourly load
-#     hourly_load_profile /= hourly_load_profile.sum(axis=0)
-
-#     yearly_projections_MWh = yearly_projections_MWh.T.loc[int(year), PROV_NAMES]
-#     hourly_load_projected = yearly_projections_MWh.multiply(hourly_load_profile)
-
-#     # TODO fix this to use timestamps
-#     if len(hourly_load_projected) == 8784:
-#         # rm feb 29th
-#         hourly_load_projected.drop(hourly_load_projected.index[1416:1440], inplace=True)
-#     elif len(hourly_load_projected) != 8760:
-#         raise ValueError("The length of the hourly load is not 8760 or 8784 (leap year, dropped)")
-
-#     snapshots = make_periodic_snapshots(
-#         year=year,
-#         freq="1h",
-#         start_day_hour="01-01 00:00:00",
-#         end_day_hour="12-31 23:00",
-#         bounds="both",
-#     )
-
-#     hourly_load_projected.index = snapshots
-#     return hourly_load_projected
 
 if __name__ == "__main__":
 

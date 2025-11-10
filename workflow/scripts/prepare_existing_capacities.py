@@ -36,6 +36,7 @@ CARRIER_MAP = {
     "nuclear": "nuclear",
     "PHS": "PHS",
     "biomass": "biomass",
+    "hydro": "hydro",
 }
 
 
@@ -148,8 +149,8 @@ if __name__ == "__main__":
     costs = load_costs(tech_costs, config["costs"], config["electricity"], baseyear, n_years)
 
     ppl_table = load_powerplants(snakemake.input.cleaned_ppls, year)
-    techs = config["existing_capacities"]["techs"]
     
+    techs = snakemake.params["techs"]
     # TODO check whether it shouldn't use the carrier map
     ppl_table = ppl_table.query("Tech in @techs or Type in @techs")
 
@@ -158,7 +159,6 @@ if __name__ == "__main__":
     # TODO add renewables
     if params.CHP_to_elec:
         existing_capacities = convert_CHP_to_poweronly(existing_capacities)
-
 
     if existing_capacities.empty or existing_capacities.lifetime.isna().any():
         logger.warning(

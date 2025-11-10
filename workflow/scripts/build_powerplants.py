@@ -164,7 +164,7 @@ def assign_year_bins(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.Da
 def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_nodes: gpd.GeoDataFrame) -> pd.DataFrame:
     """
     Assign plant node based on GPS coordinates with robust boundary handling.
-    
+
     spatial join within first, then nearest neighbor fallback
     (catches powerplants that fall on cluster boundaries due to precision issues.)
 
@@ -217,7 +217,7 @@ def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_no
         offshore_nodes.reset_index().to_crs("EPSG:3036"),
         how="left",
         distance_col="boundary_distance_m",
-        max_distance=300000) # 300km sanity check
+        max_distance=400000) # 300km sanity check
     # ugly hack in case at (inexact) border, flip coin
     idx = assigned_offshore.index.drop_duplicates()
     assigned.loc[still_unassigned, 'cluster'] = assigned_offshore.loc[idx, 'cluster_right'].values
@@ -247,11 +247,12 @@ if __name__ == "__main__":
 
     config = snakemake.params.config
     params = snakemake.params
-    cfg_GEM = params["global_energy_monitor_plants"]
+    cfg_GEM = params["gem"]
     grouped_years = params["grouped_years"]
     output_paths = dict(snakemake.output.items())
 
     gem_data = load_gem_excel(snakemake.input.GEM_plant_tracker, sheetname="Power facilities")
+
 
     cleaned = clean_gem_data(gem_data, cfg_GEM)
     cleaned = assign_year_bins(
