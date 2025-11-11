@@ -59,39 +59,37 @@ def build_busmap_from_config(
         pd.Series: Busmap mapping L2 bus index to cluster name (hierarchical ID)
     """
     splits = node_config.get("splits", {})
-    
+
     # Initialize busmap with province names (default: one cluster per province)
     busmap = buses["province"].copy()
-    
+
     # Apply custom splits for provinces with multiple clusters
     for province, clusters in splits.items():
         province_buses = buses[buses["province"] == province]
-        
+
         if province_buses.empty:
             logger.warning(f"Province '{province}' in splits config not found in network")
             continue
-        
+
         # Map each L2 prefecture to its cluster
         for cluster_name, prefectures in clusters.items():
             # Match buses by prefecture name
             mask = province_buses["prefecture"].isin(prefectures)
             matched_buses = province_buses[mask]
-            
+
             if len(matched_buses) == 0:
                 logger.warning(
                     f"No buses found for cluster '{cluster_name}' in '{province}'. "
                     f"Prefectures: {prefectures}"
                 )
                 continue
-            
+
             # Create hierarchical cluster ID: Province_ClusterName
             cluster_id = f"{province}_{cluster_name}"
             busmap.loc[matched_buses.index] = cluster_id
-            
-            logger.info(
-                f"Assigned {len(matched_buses)} buses to cluster '{cluster_id}'"
-            )
-        
+
+            logger.info(f"Assigned {len(matched_buses)} buses to cluster '{cluster_id}'")
+
         # Check for unmapped buses in split provinces
         province_mask = buses["province"] == province
         still_unmapped = buses[province_mask & (busmap == province)]
@@ -100,7 +98,7 @@ def build_busmap_from_config(
                 f"Province '{province}' has {len(still_unmapped)} unmapped L2 buses. "
                 f"Unmapped prefectures: {still_unmapped['prefecture'].tolist()}"
             )
-    
+
     return busmap.rename("busmap")
 
 
@@ -109,7 +107,7 @@ def aggregate_regions(
     regions: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
     """Aggregate regional shapes based on busmap clustering.
-    NOTE: ASSUMES busmap indices match regions indices. 
+    NOTE: ASSUMES busmap indices match regions indices.
      This will not be robust with flexible clustering
 
     Args:
@@ -123,7 +121,7 @@ def aggregate_regions(
     regions = regions.copy()
     # Assign cluster IDs to regions (assume indices match)
     regions["cluster"] = busmap.values
-    
+
     # Dissolve geometries by cluster
     clustered = regions.dissolve(by="cluster", as_index=False)
 
@@ -153,7 +151,7 @@ def update_bus_coordinates(
     clusters = shapes.groupby("cluster").geometry.apply(lambda x: x.union_all("unary"))
     # TODO consider switching to Pole of Inaccessibility as pypsa-eur does
     points = clusters.representative_point()
-    points.name="point"
+    points.name = "point"
 
     busmap_df = shapes.merge(points, left_on="cluster", right_index=True, how="left")
     busmap_df["x"] = busmap_df.point.x
@@ -163,7 +161,7 @@ def update_bus_coordinates(
     n.buses["y"] = busmap_df["y"].values
 
     # Drop admin-level columns
-    n.buses.drop(columns=["prefecture","prefecture_cn"], inplace=True)
+    n.buses.drop(columns=["prefecture", "prefecture_nl"], inplace=True)
 
 
 def clustering_for_busmap(
@@ -185,7 +183,7 @@ def clustering_for_busmap(
         aggregation_strategies = {}
 
     line_strategies = aggregation_strategies.get("lines", {})
-    
+
     bus_strategies = aggregation_strategies.get("buses", {})
     # Preserve any substation flags
     bus_strategies.setdefault("substation_lv", lambda x: bool(x.sum()))
@@ -225,7 +223,7 @@ if __name__ == "__main__":
     # Load admin L2 shapes for spatial aggregation
     node_config = snakemake.params.get("node_config", {})
     exclude_provinces = node_config.get("exclude_provinces", [])
-    
+
     admin_l2_shapes = read_admin2_shapes(snakemake.input.admin_l2_shapes).query(
         "~NAME_1.isin(@exclude_provinces)"
     )
@@ -240,10 +238,10 @@ if __name__ == "__main__":
             admin_l2_shapes,
             node_config,
         )
-        
+
     # Update bus coordinates to cluster centroids
     update_bus_coordinates(n, busmap, admin_l2_shapes)
-        
+
     # Perform clustering
     aggregation_strategies = snakemake.params.get("aggregation_strategies", {})
     clustering = clustering_for_busmap(
@@ -260,16 +258,18 @@ if __name__ == "__main__":
 
     # Aggregate regional shapes
     clustered_onshore = aggregate_regions(
-            clustering.busmap,
-            admin_l2_shapes,
-        )
+        clustering.busmap,
+        admin_l2_shapes,
+    )
     clustered_onshore.to_file(snakemake.output.regions_onshore)
 
     regions_offshore = gpd.read_file(snakemake.input.offshore_shapes)
     # merge with busmap index -> TODO move into aggregate_regions
     regions_offshore = regions_offshore.merge(
-        admin_l2_shapes.reset_index()[["NAME_1", "NAME_2","index"]],
-        on = ["NAME_1", "NAME_2"], how="left", suffixes=("", "full")
+        admin_l2_shapes.reset_index()[["NAME_1", "NAME_2", "index"]],
+        on=["NAME_1", "NAME_2"],
+        how="left",
+        suffixes=("", "full"),
     )
     regions_offshore.index = regions_offshore["index"].astype(int).astype(str)
     clustered_offshore = aggregate_regions(

@@ -312,14 +312,13 @@ rasters = ["Build_up", "Grass", "Bare", "Shrubland"]
 rule build_availability_matrix:
     params:
         nodes = config["nodes"],
+        vre_config = config["renewable"],
     input:
         # GEBCO bathymetry (water depth)
         gebco=f"{LU_RASTER}/GEBCO_tiff/gebco_2024_CN.tif",
         cutout=CUTOUT_PATH,
-        # TODO directly link to output of fetch region shapes
-        # admin 1 level = first administrative level within country
-        province_shape="resources/data/province_shapes/CHN_adm1.shp",
-        offshore_province_shapes = "resources/data/regions/provinces_offshore.geojson",
+        regions_offshore=DERIVED_COMMON + f"/regions/regions_offshore_s_{cluster_id}.geojson",
+        regions_onshore=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
         # natural reserves from WPGDA, available land
         **{
             f"natura{i+1}": "resources/data/landuse_availability/"
@@ -333,7 +332,7 @@ rule build_availability_matrix:
             for raster in rasters
         },
     output:
-        availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}.nc",
+        availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}" + f"_{cluster_id}.nc",
     log: LOGS_COMMON + "/build_availability_matrix_{technology}.log"
     script: "scripts/determine_availability_matrix.py"
 
@@ -343,12 +342,12 @@ rule build_renewable_profiles:
         config = config,
         resource_classes = lambda wildcards: config["renewable"][wildcards.technology]["resource_classes"]
     input:
-        availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}.nc",
-        province_shape="resources/data/province_shapes/CHN_adm1.shp",
-        offshore_province_shapes="resources/data/regions/provinces_offshore.geojson",
+        availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}" + f"_{cluster_id}.nc",
+        regions_offshore=DERIVED_COMMON + f"/regions/regions_offshore_s_{cluster_id}.geojson",
+        regions_onshore=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
         cutout=CUTOUT_PATH,
     output:
-        profile=DERIVED_CUTOUT+"/"+"profile_{technology}-{rc_params}.nc",
+        profile=DERIVED_CUTOUT+"/"+"profile_{technology}-{rc_params}_s_"+f"{cluster_id}.nc",
         class_regions=DERIVED_CUTOUT+"/"+"{technology}_regions_by_class_{rc_params}.geojson",
         average_distance=DERIVED_CUTOUT+"/"+"average_distance_{technology}-{rc_params}.h5",
     log:
@@ -446,7 +445,7 @@ if config["foresight"] in ["overnight"]:
             tech_costs = COSTS_DATA + "/costs_{planning_horizons}.csv",
             regions=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
             biomass_potential=DERIVED_COMMON+f"{'/p_nom/biomass_potential.h5' if config["add_biomass"] else ''}",
-            **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}.nc" for tech in config['renewable']},
+            **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}_s_"+f"{cluster_id}.nc" for tech in config['renewable']},
         output:
             network_name=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
         threads: 1

@@ -29,9 +29,8 @@ import atlite
 import geopandas as gpd
 import numpy as np
 from _helpers import configure_logging, mock_snakemake
-from constants import OFFSHORE_WIND_NODES, PROV_NAMES
+from constants import OFFSHORE_WIND_NODES
 from pandas import concat
-from readers_geospatial import read_offshore_province_shapes, read_province_shapes
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +46,14 @@ if __name__ == "__main__":
     noprogress = noprogress or not snakemake.config["atlite"]["show_progress"]
 
     technology = snakemake.wildcards.technology
-    params = snakemake.config["renewable"][technology]
+    params = snakemake.params.vre_config[technology]
 
     if technology != "offwind":
-        regions = read_province_shapes(snakemake.input.province_shape)
-        regions = regions.reindex(PROV_NAMES).rename_axis("bus")
-        buses = regions.index
+        regions = gpd.read_file(snakemake.input.regions_onshore)
     else:
-        regions = read_offshore_province_shapes(snakemake.input.offshore_province_shapes)
-        regions = regions.reindex(OFFSHORE_WIND_NODES).rename_axis("bus")
-        buses = regions.index
+        regions = gpd.read_file(snakemake.input.regions_offshore)
+    regions = regions.set_index("cluster").rename_axis("Bus")
+    buses = regions.index
 
     cutout = atlite.Cutout(snakemake.input.cutout)
 
@@ -95,8 +92,8 @@ if __name__ == "__main__":
         excluder.add_raster(snakemake.input["Bare_raster"], invert=True, crs=3035)
         excluder.add_raster(snakemake.input["Shrubland_raster"], invert=True, crs=3035)
 
-    if params.get("allowed_built_up"):
-        excluder.add_raster(snakemake.input["Built_raster"], invert=False, crs=3035)
+    exclude_built_up = not params.get("allow_built_up", False)
+    excluder.add_raster(snakemake.input["Built_raster"], invert=exclude_built_up, crs=3035)
 
     if params.get("max_depth"):
         func = functools.partial(np.greater, -params["max_depth"])

@@ -70,51 +70,6 @@ def read_pop_density(
     return gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.x, df.y), crs=crs)
 
 
-def read_province_shapes(shape_file: os.PathLike) -> gpd.GeoDataFrame:
-    """Read the province shape files
-
-    Args:
-        shape_file (os.PathLike): the path to the .shp file & co
-
-    Returns:
-        gpd.GeoDataFrame: the province shapes as a GeoDataFrame
-    """
-
-    prov_shapes = gpd.GeoDataFrame.from_file(shape_file)
-    prov_shapes = prov_shapes.to_crs(CRS)
-    prov_shapes.set_index("province", inplace=True)
-    # TODO: does this make sense? reindex after?
-    if not (prov_shapes.sort_index().index == sorted(PROV_NAMES)).all():
-        missing = f"Missing provinces: {set(PROV_NAMES) - set(prov_shapes.index)}"
-        raise ValueError(f"Province names do not match expected names: missing {missing}")
-
-    return prov_shapes
-
-
-def read_offshore_province_shapes(
-    shape_file: os.PathLike, index_name="province"
-) -> gpd.GeoDataFrame:
-    """Read the offshore province shape files (based on the eez)
-
-    Args:
-        shape_file (os.PathLike): the path to the .shp file & co
-        index_name (str, optional): the name of the index column. Defaults to "province".
-
-    Returns:
-        gpd.GeoDataFrame: the offshore province shapes as a GeoDataFrame
-    """
-
-    offshore_regional = gpd.read_file(shape_file).set_index(index_name)
-    offshore_regional = offshore_regional.reindex(OFFSHORE_WIND_NODES).rename_axis("bus")
-    if offshore_regional.geometry.isnull().any():
-        empty_geoms = offshore_regional[offshore_regional.geometry.isnull()].index.to_list()
-        raise ValueError(
-            f"There are empty geometries in offshore_regional {empty_geoms}, offshore wind will fail"
-        )
-
-    return offshore_regional
-
-
 def _fix_gadm41(df_admin_l2: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
     """Fix known issues with GADM v4.1 China admin level 2 data.
 
@@ -183,5 +138,5 @@ def read_admin2_shapes(path: str, fix=True, exclude=["Macau", "HongKong"]) -> gp
     admin_l2.reset_index(drop=True, inplace=True)
     if fix:
         admin_l2 = _fix_gadm41(admin_l2)
-        
+
     return admin_l2

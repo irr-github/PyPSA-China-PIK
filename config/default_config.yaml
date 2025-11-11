@@ -120,6 +120,7 @@ renewable:
     correction_factor: 0.8855
     potential: simple # or conservative
     natura: true
+    min_depth: 8
     max_depth: 50
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
