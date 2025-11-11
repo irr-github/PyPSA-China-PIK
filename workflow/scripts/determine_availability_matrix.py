@@ -93,7 +93,7 @@ if __name__ == "__main__":
         excluder.add_raster(snakemake.input["Shrubland_raster"], invert=True, crs=3035)
 
     exclude_built_up = not params.get("allow_built_up", False)
-    excluder.add_raster(snakemake.input["Built_raster"], invert=exclude_built_up, crs=3035)
+    excluder.add_raster(snakemake.input["Build_up_raster"], invert=exclude_built_up, crs=3035)
 
     if params.get("max_depth"):
         func = functools.partial(np.greater, -params["max_depth"])
