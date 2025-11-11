@@ -50,3 +50,5 @@ global_energy_monitor_plants:
     - "Major area (prefecture, district)"
     - "Subnational unit (state, province)"
     - "Status"
+    - "Latitude"
+    - "Longitude"

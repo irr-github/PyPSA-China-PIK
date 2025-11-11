@@ -124,6 +124,43 @@ def aggregate_p(n: pypsa.Network) -> pd.Series:
     )
 
 
+def calc_generation_share(df, n, carrier):
+    """
+    Add generation share column to an existing DataFrame.
+    Assumes df has carrier index already.
+
+    Returns: DataFrame with an added 'GenShare' column.
+    """
+    supply_data = n.statistics.supply(bus_carrier=carrier, comps="Generator")
+    total_supply = supply_data.sum()
+    gen_shares = (supply_data / total_supply * 100).dropna()
+    carrier_map = {c.lower(): row["nice_name"] for c, row in n.carriers.iterrows()}
+    gen_shares.index = gen_shares.index.map(lambda idx: carrier_map.get(idx.lower(), idx))
+    df = df.copy()
+    df["GenShare"] = gen_shares
+    return df
+
+
+def calc_atlite_heating_timeshift(date_range: pd.date_range, use_last_ts=False) -> int:
+    """Imperfect function to calculate the heating time shift for atlite
+    Atlite is in xarray, which does not have timezone handling. Adapting the UTC ERA5 data
+    to the network local time, is therefore limited to a single shift, which is based on the first
+    entry of the time range. For a whole year, in the northern Hemisphere -> winter
+
+    Args:
+        date_range (pd.date_range): the date range for which the shift is calc
+        use_last_ts (bool, optional): use last instead of first. Defaults to False.
+
+    Returns:
+        int: a single timezone shift to utc in hours
+    """
+    # import constants here to not interfere with snakemake
+    from constants import TIMEZONE
+
+    idx = 0 if not use_last_ts else -1
+    return pytz.timezone(TIMEZONE).utcoffset(date_range[idx]).total_seconds() / 3600
+
+
 def calc_lcoe(
     n: pypsa.Network,
     grouper=pypsa.statistics.get_carrier_and_bus_carrier,
@@ -213,41 +250,20 @@ def calc_lcoe(
     return outputs[outputs.supply > 0]
 
 
-def calc_generation_share(df, n, carrier):
-    """
-    Add generation share column to an existing DataFrame.
-    Assumes df has carrier index already.
-
-    Returns: DataFrame with an added 'GenShare' column.
-    """
-    supply_data = n.statistics.supply(bus_carrier=carrier, comps="Generator")
-    total_supply = supply_data.sum()
-    gen_shares = (supply_data / total_supply * 100).dropna()
-    carrier_map = {c.lower(): row["nice_name"] for c, row in n.carriers.iterrows()}
-    gen_shares.index = gen_shares.index.map(lambda idx: carrier_map.get(idx.lower(), idx))
-    df = df.copy()
-    df["GenShare"] = gen_shares
-    return df
-
-
-def calc_atlite_heating_timeshift(date_range: pd.date_range, use_last_ts=False) -> int:
-    """Imperfect function to calculate the heating time shift for atlite
-    Atlite is in xarray, which does not have timezone handling. Adapting the UTC ERA5 data
-    to the network local time, is therefore limited to a single shift, which is based on the first
-    entry of the time range. For a whole year, in the northern Hemisphere -> winter
+def calc_link_length(row, network: pypsa.Network) -> float:
+    """Calculate the share of a link in the total link capacity
+    for links connecting the same bus pair
 
     Args:
-        date_range (pd.date_range): the date range for which the shift is calc
-        use_last_ts (bool, optional): use last instead of first. Defaults to False.
-
-    Returns:
-        int: a single timezone shift to utc in hours
+        row (pd.Series): the link row
+        network (pypsa.Network): the network object
     """
-    # import constants here to not interfere with snakemake
-    from constants import TIMEZONE
-
-    idx = 0 if not use_last_ts else -1
-    return pytz.timezone(TIMEZONE).utcoffset(date_range[idx]).total_seconds() / 3600
+    from functions import haversine 
+    bus0 = row["bus0"]
+    bus1 = row["bus1"]
+    x0, y0 = network.buses.loc[bus0, ["x", "y"]]
+    x1, y1 = network.buses.loc[bus1, ["x", "y"]]
+    return haversine([x0, y0], [x1, y1])
 
 
 def determine_simulation_timespan(config: dict, year: int) -> int:
