@@ -230,6 +230,19 @@ rule cluster_network:
         "scripts/cluster_network_l2.py"
 
 
+rule build_clustered_population:
+    input:
+        pop_layouts=DERIVED_COMMON + "/population/pop_layout.nc",
+        regions=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
+        cutout=CUTOUT_PATH,
+    output:
+        clustered_pop_layout=DERIVED_COMMON + f"/pop_layout_base_s_{cluster_id}.csv",
+    log:
+        LOGS_COMMON + f"build_clustered_population/s_{cluster_id}.log",
+    script:
+        "/scripts/build_population_clustered.py"
+
+
 rule build_powerplants:
     """ Groups power plants by node"""
     params:
