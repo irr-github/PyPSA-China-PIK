@@ -2,8 +2,6 @@
 Build the electricity demand
 """
 
-
-
 import logging
 import os
 
@@ -133,16 +131,15 @@ if __name__ == "__main__":
     configure_logging(snakemake, logger=logger)
 
     logger.info("Building base network electricity reference demand data...")
-    config = snakemake.params.config
 
     prov_hrly_MWh_load = read_historical_data(
         snakemake.input.hrly_regional_elec_load,
         snakemake.input.province_codes,
-        )
+    )
     gdp = gpd.read_file(snakemake.input.gdp)
     population = pd.read_csv(snakemake.input.population, index_col=0)
 
-    if not len(population)==len(gdp):
+    if not len(population) == len(gdp):
         raise ValueError("Population and GDP data admin2 length mismatch")
     gdp_with_pop = gdp.merge(population, on=["NAME_1", "NAME_2"], how="left")
 
@@ -154,7 +151,9 @@ if __name__ == "__main__":
 
     load_l2.name = "electricity demand (MW)"
     comp = dict(zlib=True, complevel=9, least_significant_digit=5)
-    logger.info(f"Saving base network electricity reference demand data to {snakemake.output.base_network_load}...")
+    logger.info(
+        f"Saving base network electricity reference demand data to {snakemake.output.base_network_load}..."
+    )
     load_l2.to_netcdf(snakemake.output.base_network_load, encoding={load_l2.name: comp})
 
     logger.info("Successfully built base network electricity reference demand data.")

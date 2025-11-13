@@ -52,14 +52,16 @@ def build_capacities(powerplant_table: pd.DataFrame, cost_data: pd.DataFrame) ->
     powerplant_table.rename(columns={"capacity": "Capacity", "Type": "Fueltype"}, inplace=True)
 
     df = powerplant_table.merge(cost_data, how="left", left_on=["Tech"], right_index=True)
-    df2 = powerplant_table.merge(cost_data, how = "left", left_on = ["Fueltype"], right_index=True)
+    df2 = powerplant_table.merge(cost_data, how="left", left_on=["Fueltype"], right_index=True)
     missed = df.capital_cost.isna()
     df.loc[missed, :] = df2.loc[missed, :]
     still_missed = df.loc[df.capital_cost.isna()]
 
     if not still_missed.empty:
         missed_techs = still_missed.Fueltype.unique() + still_missed.Tech.unique()
-        raise ValueError(f"Cost Data could not be found for requested existing techs or types {missed_techs}")
+        raise ValueError(
+            f"Cost Data could not be found for requested existing techs or types {missed_techs}"
+        )
 
     carrier = {k: v for k, v in CARRIER_MAP.items() if k in techs}
     df["Tech"] = df["Fueltype"].map(carrier)
@@ -83,8 +85,10 @@ def convert_CHP_to_poweronly(capacities: pd.DataFrame) -> pd.DataFrame:
     chp_mask = capacities.Tech.str.contains("CHP")
     capacities.loc[chp_mask, "Fueltype"] = (
         capacities.loc[chp_mask, "Fueltype"]
-        .str.replace("central coal CHP", "coal power plant")
-        .str.replace("central gas CHP", "gas CCGT")
+        .str.replace("coal CHP", "coal")
+        .replace("CHP coal", "coal")
+        .str.replace("CHP gas", "gas CCGT")
+        .replace("gas CHP", "gas CCGT")
     )
     # update the Tech field based on the converted Fueltype
     capacities.loc[chp_mask, "Tech"] = (
@@ -109,17 +113,24 @@ def load_powerplants(path: os.PathLike, plan_year: int) -> pd.DataFrame:
     """
 
     ppl_data = pd.read_csv(path, index_col=0).reset_index()
-    
+
     ppl_data["Retired year"].fillna(1e5, inplace=True)
     ppl_data = ppl_data.query("`Start year`<= @plan_year and `Retired year` > @plan_year")
 
     ppl_table = (
-        ppl_data.pivot_table(
-            columns="grouping_year", index=["cluster", "Type"], values="Capacity (MW)", aggfunc="sum"
+        (
+            ppl_data.pivot_table(
+                columns="grouping_year",
+                index=["cluster", "Type"],
+                values="Capacity (MW)",
+                aggfunc="sum",
+            )
+            .fillna(0)
+            .astype(int)
         )
-        .fillna(0)
-        .astype(int)
-    ).stack().reset_index()
+        .stack()
+        .reset_index()
+    )
     ppl_table["Tech"] = ppl_table.Type.map(CARRIER_MAP)
 
     return ppl_table.rename(columns={0: "Capacity"})
@@ -150,7 +161,7 @@ if __name__ == "__main__":
     costs = load_costs(tech_costs, config["costs"], config["electricity"], baseyear, n_years)
 
     ppl_table = load_powerplants(snakemake.input.cleaned_ppls, year)
-    
+
     techs = snakemake.params["techs"]
     # TODO check whether it shouldn't use the carrier map
     ppl_table = ppl_table.query("Tech in @techs or Type in @techs")

@@ -1,6 +1,4 @@
-"""
-
-"""
+""" """
 
 import logging
 import xarray as xr
@@ -14,7 +12,7 @@ from _pypsa_helpers import (
     assign_locations,
     make_periodic_snapshots,
     shift_profile_to_planning_year,
-    rename_techs
+    rename_techs,
 )
 from readers import load_costs
 from constants import NICE_NAMES_DEFAULT
@@ -58,6 +56,7 @@ def update_transmission_costs(n, costs, length_factor=1.0):
 def add_reverse_links(n: pypsa.Network) -> None:
     pass
 
+
 def add_missing_carriers(n: pypsa.Network, carriers: list | set) -> None:
     """Function to add missing carriers to the network without raising errors.
 
@@ -71,7 +70,7 @@ def add_missing_carriers(n: pypsa.Network, carriers: list | set) -> None:
 
 
 # TODO figure out whether still relevant
-def sanitize_carriers(n: pypsa.Network, config: dict) -> None:
+def sanitize_carriers(n: pypsa.Network, plot_config: dict) -> None:
     """Sanitize the carrier information in a PyPSA Network object.
 
     The function ensures that all unique carrier names are present in the network's
@@ -80,11 +79,11 @@ def sanitize_carriers(n: pypsa.Network, config: dict) -> None:
 
     Args:
         n (pypsa.Network): PyPSA Network object representing the electrical power system.
-        config (dict): A dictionary containing configuration information, specifically the
-               "plotting" key with "nice_names" and "tech_colors" keys for carriers.
+        plot_config (dict): A dictionary containing configuration information for plotting,
+               specifically the "nice_names" and "tech_colors" keys for carriers.
     """
     # update default nice names w user settings
-    nice_names = NICE_NAMES_DEFAULT.update(config["plotting"].get("nice_names", {}))
+    nice_names = NICE_NAMES_DEFAULT.update(plot_config.get("nice_names", {}))
     for c in n.iterate_components():
         if "carrier" in c.df:
             add_missing_carriers(n, c.df.carrier)
@@ -96,7 +95,7 @@ def sanitize_carriers(n: pypsa.Network, config: dict) -> None:
     n.carriers.nice_name.where(n.carriers.nice_name != "", nice_names, inplace=True)
 
     # TODO make less messy, avoid using map
-    tech_colors = config["plotting"]["tech_colors"]
+    tech_colors = plot_config["tech_colors"]
     colors = pd.Series(tech_colors).reindex(carrier_i)
     # try to fill missing colors with tech_colors after renaming
     missing_colors_i = colors[colors.isna()].index
@@ -125,9 +124,7 @@ def attach_load(
         busmap_path (PathLike): Path to the busmap file.
         scaling (float): Scaling factor for the load data. Defaults to 1.0.
     """
-    load = (
-        xr.open_dataarray(load_path).to_dataframe().squeeze(axis=1).unstack(level="time")
-    )
+    load = xr.open_dataarray(load_path).to_dataframe().squeeze(axis=1).unstack(level="time")
 
     # apply clustering busmap
     busmap = pd.read_csv(busmap_path, dtype=str, index_col=0).squeeze()
@@ -150,8 +147,9 @@ def add_links(n, ppl_data, carrier_list):
     pass
 
 
-
-def distribute_existing_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series) -> pd.DataFrame:
+def distribute_existing_vre_by_grade(
+    cap_by_year: pd.Series, grade_capacities: pd.Series
+) -> pd.DataFrame:
     """Distribute VRE capacities by grade, ensuring potentials are respected and prioritizing better grades first
 
     Allocates variable renewable energy (VRE) capacity additions across different

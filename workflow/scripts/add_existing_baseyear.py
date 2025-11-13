@@ -263,12 +263,12 @@ def add_power_capacities_installed_before_baseyear(
     logger.info(df.grouping_year.unique())
     # TODO: exclude collapse of coal & coal CHP IF CCS retrofitting is enabled
     if config["existing_capacities"].get("collapse_years", False):
-        df.grouping_year = 1  # 0 is default
+        df.grouping_year = "brownfield"  # 0 is default
     df.grouping_year = df.grouping_year.astype(int, errors="ignore")
 
     df_ = df.pivot_table(
         index=["grouping_year", "tech_clean", "resource_class"],
-        columns="bus",
+        columns="cluster",
         values="Capacity",
         aggfunc="sum",
     )
@@ -281,7 +281,8 @@ def add_power_capacities_installed_before_baseyear(
     # TODO do we really need to loop over the years? / so many things?
     # something like df_.unstack(level=0) would be more efficient
     for grouping_year, generator, resource_grade in df_.index:
-        build_year = 1 if grouping_year == "brownwfield" else grouping_year
+        build_year = 1 if grouping_year == "brownfield" else grouping_year
+
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
         if carrier_map.get(generator, "missing") not in defined_carriers:
             logger.warning(
@@ -324,7 +325,10 @@ def add_power_capacities_installed_before_baseyear(
                 location=buses,
             )
 
-        elif generator in ["nuclear", "coal power plant", "biomass", "oil"]:
+        # TODO fix p_max_pu for coal!!!
+        elif generator in ["nuclear", "coal", "biomass", "oil"]:
+            p_max_pu = config["max_min_operation"].get(generator, {}).get("p_max_pu", 1.0)
+            p_min_pu = config["max_min_operation"].get(generator, {}).get("p_min_pu", 0.0)
             n.add(
                 "Generator",
                 capacity.index,
@@ -335,8 +339,8 @@ def add_power_capacities_installed_before_baseyear(
                 p_nom_max=capacity,
                 p_nom_min=capacity,
                 p_nom_extendable=False,
-                p_max_pu=config["nuclear_reactors"]["p_max_pu"] if generator == "nuclear" else 1,
-                p_min_pu=config["nuclear_reactors"]["p_min_pu"] if generator == "nuclear" else 0,
+                p_max_pu=p_max_pu,
+                p_min_pu=p_min_pu,
                 marginal_cost=costs.at[costs_key, "marginal_cost"],
                 efficiency=costs.at[costs_key, "efficiency"] * (1 - eff_penalty_hist),
                 build_year=build_year,

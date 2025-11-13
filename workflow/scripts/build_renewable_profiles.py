@@ -68,9 +68,8 @@ import xarray as xr
 from _helpers import configure_logging, mock_snakemake
 from atlite import Cutout
 from atlite.gis import ExclusionContainer
-from constants import OFFSHORE_WIND_NODES, PROV_NAMES, TIMEZONE
+from constants import TIMEZONE
 from dask.distributed import Client
-from readers_geospatial import read_offshore_province_shapes, read_province_shapes
 
 logger = logging.getLogger(__name__)
 
@@ -213,29 +212,27 @@ if __name__ == "__main__":
     configure_logging(snakemake)
 
     nprocesses = int(snakemake.threads)
-    noprogress = snakemake.config["run"].get("disable_progressbar", True)
-    noprogress = noprogress or not snakemake.config["atlite"]["show_progress"]
-
+    noprogress = snakemake.params.noprogress_bar
     technology = snakemake.wildcards.technology
-    params = snakemake.config["renewable"][technology]
+    params = snakemake.params.tech_config
 
     resource, models = prepare_resource_config(params, nprocesses, noprogress)
     logger.info(f"Resource config: {resource}")
 
     if technology != "offwind":
-        regions = read_province_shapes(snakemake.input.province_shape)
-        regions = regions.reindex(PROV_NAMES).rename_axis("bus")
-        buses = regions.index
+        regions = gpd.read_file(snakemake.input.regions_onshore)
     else:
-        regions = read_offshore_province_shapes(snakemake.input.offshore_province_shapes)
-        regions = regions.reindex(OFFSHORE_WIND_NODES).rename_axis("bus")
-        buses = regions.index
+        regions = gpd.read_file(snakemake.input.regions_offshore)
+
+    regions = regions.set_index("cluster").rename_axis("bus")
+    buses = regions.index
 
     cutout = Cutout(snakemake.input.cutout)
     cutout = localize_cutout_time(cutout, drop_leap=True)
 
     func = getattr(cutout, resource.pop("method"))
     availability = xr.open_dataarray(snakemake.input.availability_matrix)
+    availability = availability  # .rename({"Bus": "bus"})
 
     correction_factor = params.get("correction_factor", 1.0)
     capacity_per_sqkm = params["capacity_per_sqkm"]

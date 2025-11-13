@@ -187,13 +187,12 @@ rule base_network:
 #     script:
 #         "../scripts/build_clustered_population_layouts.py"
 
-
+# TODO add HID names (possibly add bus names to regions)
 rule build_electricity_demand:
     """build the electricity demand at provincial and base network level"""
     params:
         # data_year=2018,
         distribution_key = {"gdp":0.6, "pop":0.4},
-        config = config,
     input:
         gdp = DERIVED_COMMON + "/regions/regions_w_gdp.geojson",
         population = DERIVED_COMMON + "/population/pop_distributions.csv",
@@ -236,7 +235,6 @@ rule build_powerplants:
         gem = config["global_energy_monitor_plants"],
         technologies = config["existing_capacities"]["techs"],
         grouped_years = config["existing_capacities"]["grouping_years"],
-        config = config,
     input:
         GEM_plant_tracker="resources/data/existing_infrastructure/gem_data_raw/Global-integrated-Plant-Tracker-July-2025_china.xlsx",
         nodes=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
@@ -251,7 +249,6 @@ rule build_powerplants:
 rule add_electricity:
     """ Add generators and links to clustered network"""
     params:
-        config = config,
         snapshots=config["snapshots"],
         CHP_to_elec = not config.get("heat_coupling", False),
         elect_proj_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
@@ -263,6 +260,7 @@ rule add_electricity:
         powerplants=DERIVED_COMMON + "/existing_infrastructure/capacity_cleaned.csv",
     output:
         elec_network=DERIVED_COMMON + "/networks/base_elec_{planning_horizons}.nc",
+
 
 # TODO find a way to turn off if heat coupling is off 
 rule build_solar_thermal_profiles:
@@ -284,7 +282,7 @@ rule build_temperature_profiles:
     # TODO change to new population
     input:
         population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
-        cutout=CUTOUT_PATH
+        cutout=CUTOUT_PATH,
     output:
         temp= DERIVED_CUTOUT + "/heating/temperature.h5"
     log: LOGS_COMMON + "/build_temperature_profiles.log"
@@ -339,8 +337,9 @@ rule build_availability_matrix:
 
 rule build_renewable_profiles:
     params:
-        config = config,
-        resource_classes = lambda wildcards: config["renewable"][wildcards.technology]["resource_classes"]
+        noprogress_bar = config["run"].get("disable_progressbar", True) or not config["atlite"]["show_progress"],
+        resource_classes = lambda wildcards: config["renewable"][wildcards.technology]["resource_classes"],
+        tech_config = lambda wildcards: config["renewable"][wildcards.technology],
     input:
         availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}" + f"_{cluster_id}.nc",
         regions_offshore=DERIVED_COMMON + f"/regions/regions_offshore_s_{cluster_id}.geojson",
@@ -362,8 +361,11 @@ rule build_renewable_profiles:
 # # TODO check whether energy totals still needed
 rule build_load_profiles:
     params:
-        config = config,
-        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
+        snapshots=config["snapshots"],
+        weather_year=get_cutout_params(config)["weather_year"],
+        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"],
+        scenarios = config["scenario"],
+        heat_demand = config["heat_demand"],
     input:
         population = DERIVED_COMMON + "/population/population.h5",
         population_map = DERIVED_COMMON + "/population/population_gridcell_map.h5",
@@ -388,7 +390,7 @@ rule build_load_profiles:
 rule build_biomass_potential:
     input:
         # from doi.org/10.1038/s41467-021-23282-x
-        biomass_feedstocks = "resources/data/p_nom/41467_2021_23282_MOESM4_ESM.xlsx"
+        biomass_feedstocks = "resources/data/p_nom/41467_2021_23282_MOESM4_ESM.xlsx",
     log:
         LOGS_COMMON + "/build_biomass_potential.log"
     output:
@@ -411,28 +413,34 @@ rule prepare_baseyear_capacities:
         tech_costs=path_manager.costs_dir() + f"/costs_{BASEYEAR}.csv",
         cleaned_ppls = DERIVED_COMMON + "/existing_infrastructure/capacity_cleaned.csv",
     output: 
-        installed_capacities = DERIVED_DATA + '/existing_infrastructure/capacities_{planning_horizons}.csv',
+        installed_capacities = path_manager.infrastructure() + '/capacities_{planning_horizons}.csv',
     threads: 1
     resources: mem_mb=2000
     script: "scripts/prepare_existing_capacities.py"
 
 
+
 # make sure the params will appear in the profile names
 resource_class_cfg = {tech: config["renewable"][tech]["resource_classes"] for tech in config["renewable"]}
 rsc_params = {key : "_".join([f"{k}{v}" for k, v in resource_class_cfg[key].items()]) for key in resource_class_cfg}
-if config["foresight"] in ["overnight"]:
-    add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
 
+if config["foresight"] in ["overnight"]:
+    
+    add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
+    print(add_brownfield)
+
+    # TODO switch to pypsa-eur style rule with add_electrictiy, prepare_heat (bundle) and add_heat
+    # aim to make this simpler when split heat as rule.
+    CFG_KEYS = ["scenario", "co2_scenarios", "lines", "costs", "electricity", "transmission_efficiency", "line_losses", "no_lines",
+        "Techs", "add_biomass", "add_H2", "max_min_operation", "H2", "add_methanation", "edge_paths", "add_hydro",
+        "time_dep_hp_cop", "water_tanks", "chp_parameters", "solar_cf_correction", "hydro_dams", "hydro", "io"]
     rule prepare_networks:
         params:
-            config = config,
+            config = {k: config[k] for k in CFG_KEYS},
             snapshots=config["snapshots"],
-            elec_proj_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
+            elec_proj_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"],
         input:
             clustered_network=DERIVED_COMMON + f"/networks/base_s_{cluster_id}.nc",
-            # TODO add a constant element for industry
-            # TODO revisit central and decentral fractions
-            # TODO revisit heating demand per provinces
             busmap=DERIVED_COMMON + f"/networks/busmap_s_{cluster_id}.csv",
             heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
@@ -447,7 +455,7 @@ if config["foresight"] in ["overnight"]:
             biomass_potential=DERIVED_COMMON+f"{'/p_nom/biomass_potential.h5' if config["add_biomass"] else ''}",
             **{f"profile_{tech}": DERIVED_CUTOUT +f"/profile_{tech}-{rsc_params[tech]}_s_"+f"{cluster_id}.nc" for tech in config['renewable']},
         output:
-            network_name=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
+            network_name=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}' + f'_{cluster_id}.nc',
         threads: 1
         resources: mem_mb=10000
         script: "scripts/prepare_network.py"
@@ -455,18 +463,20 @@ if config["foresight"] in ["overnight"]:
     paidoff_caps = DERIVED_DATA + "/remind/harmonized_capacities/paid_off_capacities.csv"
     if not config["run"].get("is_remind_coupled", False):
         paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
+
+    # only called if brownfield addition is desired
     rule add_existing_baseyear:
         params:
             baseyear = BASEYEAR,
             add_build_year_to_new_assets = False,
             vre_carriers = ["onwind", "offwind", "solar"],
         input:
-            network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
+            network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}' + f'_{cluster_id}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
             cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5",
             installed_capacities = path_manager.infrastructure() + '/capacities_{planning_horizons}.csv',
             paid_off_capacities_remind = paidoff_caps,
-        output: RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}.nc'
+        output: RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}' + f'_{cluster_id}.nc',
         threads: 1
         resources: mem_mb=2000
         script: "scripts/add_existing_baseyear.py"
@@ -475,9 +485,9 @@ if config["foresight"] in ["overnight"]:
         params:
             solving = config["solving"],
         input:
-            network_name=RESULTS_DIR+ f'/prenetworks{add_brownfield}/' +'ntwk_{planning_horizons}.nc',
+            network_name=RESULTS_DIR+ f'/prenetworks{add_brownfield}/' +'ntwk_{planning_horizons}' + f'_{cluster_id}.nc',
         output:
-            network_name=RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}.nc'
+            network_name=RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}' + f'_{cluster_id}.nc',
         log:
             solver = LOG_DIR + "/solve_network_postnetworks/ntwk_{planning_horizons}.log"
         threads: 4
