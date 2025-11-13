@@ -35,13 +35,13 @@ plotting:
     boundaries: [71, 135., 0, 56.]
     bus_size_factor: 4.e+8
     bus_size_factor_heat: 2.e+8
-    linewidth_factor: 7.5e+3
+    linewidth_factor: 6.e+3
     linewidth_factor_heat: 5.e+3
     bus_size_factor_demand: 2.e+7
     min_edge_capacity : 5.e+2 # MW
     ref_bus_unit: "TWh"
-    ref_edge_sizes : [10.e+3,50.e+3,150.e+3] # MW
-    ref_edge_sizes_heat : [1.e+3,10.e+3,50.e+3]  # in MW
+    ref_edge_sizes : [10.e+3,50.e+3,100.e+3] # MW
+    ref_edge_sizes_heat : [100,1.e+3,50.e+3]  # in MW
     ref_bus_sizes : [ 2.e+9, 5.e+8,] # MWh
     ref_bus_sizes_heat : [500.e+6, 100.e+6, 10.e+6] # MWh
     bus_ref_title : "Electricity supply"
@@ -279,6 +279,7 @@ plotting:
     # hydro and water
     hydro: '#298c81'
     hydro reservoir: '#298c81'
+    hydro turbine: '#298c81'
     ror: '#3dbfb0'
     run of river: '#3dbfb0'
     hydroelectricity: '#298c81'

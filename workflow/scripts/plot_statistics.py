@@ -394,7 +394,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "plot_statistics",
             carrier="AC",
-            planning_horizons="2060",
+            planning_horizons="2035",
             co2_pathway="exp175default",
             topology="current+FCG",
             heating_demand="positive",

@@ -113,14 +113,14 @@ def add_base_year(n: pypsa.Network, plan_year: int):
         comp.loc[mask, "build_year"] = plan_year
 
 
-def add_existing_vre_capacities(
+def calc_existing_vre_capacities(
     n: pypsa.Network,
     costs: pd.DataFrame,
     vre_caps: pd.DataFrame,
     config: dict,
 ) -> pd.DataFrame:
     """
-    Add existing VRE capacities to the network and distribute them by vre grade potential.
+    Distribute existing VRE capacities by vre grade potential.
     Adapted from pypsa-eur but the VRE capacities are province resolved.
 
     NOTE that using this function requires adding the land-use constraint in solve_network so
@@ -178,7 +178,7 @@ def add_existing_vre_capacities(
                         df_agg.at[name, "grouping_year"] = int(year)
                         df_agg.at[name, "lifetime"] = costs.at[cost_key, "lifetime"]
                         df_agg.at[name, "DateOut"] = year + costs.at[cost_key, "lifetime"] - 1
-                        df_agg.at[name, "bus"] = bus
+                        df_agg.at[name, "cluster"] = bus
                         df_agg.at[name, "resource_class"] = bin_id
 
     if df_agg.empty:
@@ -796,12 +796,14 @@ if __name__ == "__main__":
 
     vre_caps = existing_capacities.query("Tech in @vre_techs | Fueltype in @vre_techs")
     # vre_caps.loc[:, "Country"] = coco.CountryConverter().convert(["China"], to="iso2")
-    vres = add_existing_vre_capacities(n, costs, vre_caps, config)
+    vres = calc_existing_vre_capacities(n, costs, vre_caps, config)
     # TODO: fix bug, installed has less vre/wind cap than vres.
     installed = pd.concat(
         [existing_capacities.query("Tech not in @vre_techs & Fueltype not in @vre_techs"), vres],
         axis=0,
     )
+    if installed.cluster.isna().any():
+        raise ValueError("Clusters could not be assigned to all existing capacities")
 
     # add to the network
     add_power_capacities_installed_before_baseyear(n, costs, config, installed)

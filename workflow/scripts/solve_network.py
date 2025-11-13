@@ -585,7 +585,9 @@ def add_remind_paid_off_constraints(n: pypsa.Network) -> None:
             paidoff_comp.dropna(subset=[paid_off_col], inplace=True)
 
         # techs that only exist as paid-off don't have usual counterparts
-        remind_only = n.config["existing_capacities"].get("remind_only_tech_groups", [])  # noqa: F841
+        remind_only = n.config["existing_capacities"].get(
+            "remind_only_tech_groups", []
+        )  # noqa: F841
         paidoff_comp = paidoff_comp.query("tech_group not in @remind_only")
 
         if paidoff_comp.empty:
@@ -639,14 +641,16 @@ def add_operational_reserve_margin(n: pypsa.network, config):
             contingency: 400000 # MW
     """
     reserve_config = config["operational_reserve"]
-    VRE_TECHS = config["Techs"].get("non_dispatchable", ["onwind", "offwind", "solar"]) # noqa: F841
+    VRE_TECHS = config["Techs"].get(
+        "non_dispatchable", ["onwind", "offwind", "solar"]
+    )  # noqa: F841
     EPSILON_LOAD, EPSILON_VRES = reserve_config["epsilon_load"], reserve_config["epsilon_vres"]
     CONTINGENCY = float(reserve_config["contingency"])
 
     # AC producers
     ac_mask = n.generators.bus.map(n.buses.carrier) == "AC"
-    ac_buses = n.buses.query("carrier =='AC'").index # noqa: F841
-    attached_carriers = filter_carriers(n, "AC") # noqa: F841
+    ac_buses = n.buses.query("carrier =='AC'").index  # noqa: F841
+    attached_carriers = filter_carriers(n, "AC")  # noqa: F841
     # conceivably a link could have a negative efficiency and flow towards bus0 - don't consider
     prod_links = n.links.query("carrier in @attached_carriers & not bus0 in @ac_buses")
     transport_links = prod_links.bus0.map(n.buses.carrier) == prod_links.bus1.map(n.buses.carrier)
@@ -732,8 +736,9 @@ def extra_functionality(n: pypsa.Network, _) -> None:
 
     Args:
         n (pypsa.Network): the network object to optimize
-        _: dummy for compatibility with pypsa solve
+        _: dummy for compatibility with pypsa solver
     """
+    logger.info("Adding extra functionality to the network model")
     config = n.config
     add_battery_constraints(n)
     add_transmission_constraints(n)
@@ -766,6 +771,12 @@ def solve_network(
     Returns:
         pypsa.Network: the optimized network
     """
+
+    # # fix due to issues with pypsa nodal_balance constraitn in v0.35 (order according to buses)
+    # missing_loads = [c for c in n.buses.index if not c in n.loads_t.p_set]
+    # n.loads_t.p_set.loc[:, missing_loads] = 0
+    # n.loads_t.p_set = n.loads_t.p_set.loc[:, n.buses.index]
+
     set_of_options = solving["solver"]["options"]
     solver_options = solving["solver_options"][set_of_options] if set_of_options else {}
     solver_name = solving["solver"]["name"]
@@ -816,13 +827,14 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
             "solve_networks",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            planning_horizons="2030",
+            # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="exp175default",
+            planning_horizons="2020",
             topology="current+FCG",
             # heating_demand="positive",
             # configfiles="resources/tmp/remind_coupled_cg.yaml",
             heating_demand="positive",
-            configfiles="resources/tmp/pseudo-coupled.yaml",
+            # configfiles="resources/tmp/pseudo-coupled.yaml",
         )
     configure_logging(snakemake)
 
