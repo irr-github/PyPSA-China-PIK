@@ -591,14 +591,15 @@ def calculate_weighted_prices(
     prices.rename(index={"AC": "electricity"}, inplace=True)
 
     # stores
-    w = n.statistics.withdrawal(comps="Store")
+    withdr = n.statistics.withdrawal(comps="Store")
     # biomass stores have no withdrawal for some reason
-    if not w[w == 0].empty:
-        w[w == 0] = n.statistics.supply(comps="Store")[w == 0]
+    if not withdr[withdr == 0].empty:
+        withdr[withdr == 0] = n.statistics.supply(comps="Store")[withdr == 0]
 
     store_rev = n.statistics.revenue(comps="Store")
     mask = store_rev > load_rev.sum() / 400  # remove small
-    wp_stores = store_rev[mask] / w[mask]
+    indx = mask[mask].index
+    wp_stores = store_rev.loc[indx] / withdr.loc[indx]
     weighted_prices[label] = pd.concat([prices, wp_stores.rename({"stations": "reservoir inflow"})])
     return weighted_prices
 
@@ -753,7 +754,7 @@ if __name__ == "__main__":
             "make_summary",
             topology="current+FCG",
             co2_pathway="exp175default",
-            planning_horizons="2060",
+            planning_horizons="2020",
             # co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2",
             heating_demand="positive",
             # configfiles=["resources/tmp/remind_coupled_cg.yaml"],
@@ -797,7 +798,7 @@ if __name__ == "__main__":
 
     def to_csv(dfs: dict[str, pd.DataFrame], dir: str):
         """Export dataframes to CSV files in the given directory
-        
+
         Args:
             dfs (dict[str, pd.DataFrame]): dictionary of dataframes to export
             dir (str): directory to save the CSV files"""

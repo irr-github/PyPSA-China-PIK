@@ -2,6 +2,8 @@
 
 from os.path import join
 
+cluster_id = config["nodes"].get("custom_name", "")
+
 STATISTICS_BARPLOTS = [
     "capacity_factor",
     "installed_capacity",
@@ -24,7 +26,7 @@ if config["foresight"] in ["None", "overnight", "non-pathway", "myopic"]:
         input:
             network=join(
                 RESULTS_DIR,
-                "postnetworks/ntwk_{planning_horizons}.nc",
+                "postnetworks/ntwk_{planning_horizons}" + f"_{cluster_id}.nc",
             ),
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
             province_shape="resources/data/province_shapes/CHN_adm1.shp",
@@ -41,7 +43,7 @@ if config["foresight"] in ["None", "overnight", "non-pathway", "myopic"]:
         input:
             network=join(
                 RESULTS_DIR,
-                "postnetworks/ntwk_{planning_horizons}.nc",
+                "postnetworks/ntwk_{planning_horizons}" + f"_{cluster_id}.nc",
             ),
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
         output:
@@ -75,7 +77,7 @@ if config["foresight"] in ["None", "overnight", "non-pathway", "myopic"]:
         input:
             network=join(
                 RESULTS_DIR,
-                "postnetworks/ntwk_{planning_horizons}.nc",
+                "postnetworks/ntwk_{planning_horizons}" + f"_{cluster_id}.nc",
             ),
         params:
             stat_types=STATISTICS_BARPLOTS,
@@ -92,7 +94,7 @@ if config["foresight"] in ["None", "overnight", "non-pathway", "myopic"]:
         input:
             network=join(
                 RESULTS_DIR,
-                "postnetworks/ntwk_{planning_horizons}.nc",
+                "postnetworks/ntwk_{planning_horizons}" + f"_{cluster_id}.nc",
             ),
         params:
             winter_day1="12-10 21:00",  # mm-dd HH:MM 
@@ -117,7 +119,9 @@ else:
 # TODO fix
 rule plot_heatmap:
     input:
-        network=RESULTS_DIR + "/postnetworks/ntwk_{planning_horizons}.nc",
+        network=RESULTS_DIR
+        + "/postnetworks/ntwk_{planning_horizons}"
+        + f"_{cluster_id}.nc",
     output:
         water=RESULTS_DIR
         + "/plots/heatmap/water_tank/water_tank-{planning_horizons}.png",

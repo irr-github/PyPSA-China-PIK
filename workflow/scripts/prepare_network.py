@@ -327,7 +327,8 @@ def add_conventional_generators(
             capital_cost=costs.at["CCGT-CCS", "efficiency"]
             * costs.at["CCGT-CCS", "capital_cost"],  # NB: capital cost is per MWel
             lifetime=costs.at["CCGT-CCS", "lifetime"],
-            p_max_pu=0.9,  # planned and forced outages
+            p_max_pu=config["max_min_operation"]["coal"]["p_max_pu"],  # planned and forced outages
+            p_min_pu=config["max_min_operation"]["coal"].get("p_min_pu", 0),
         )
 
     if config["add_coal"]:
@@ -335,7 +336,7 @@ def add_conventional_generators(
             "fossil_ramps", {"coal": {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan}}
         )
         ramps = ramps.get("coal", {"ramp_limit_up": np.nan, "ramp_limit_down": np.nan})
-        ramps = {k: v * config["snapshots"]["frequency"] for k, v in ramps.items()}
+        ramps = {k: v * snapshots_config["frequency"] for k, v in ramps.items()}
         # this is the non sector-coupled approach
         # for industry may have an issue in that coal feeds to chem sector
         # no coal in Beijing - political decision
@@ -355,7 +356,8 @@ def add_conventional_generators(
             lifetime=costs.at["coal", "lifetime"],
             ramp_limit_up=ramps["ramp_limit_up"],
             ramp_limit_down=ramps["ramp_limit_down"],
-            p_max_pu=0.9,  # planned and forced outages
+            p_max_pu=config["max_min_operation"]["coal"]["p_max_pu"],  # planned and forced outages
+            p_min_pu=config["max_min_operation"]["coal"].get("p_min_pu", 0),
         )
 
         # TODO separate - not conventional
@@ -371,7 +373,10 @@ def add_conventional_generators(
                 marginal_cost=costs.at["coal ccs", "marginal_cost"],
                 capital_cost=costs.at["coal ccs", "capital_cost"],  # NB: capital cost is per MWel
                 lifetime=costs.at["coal ccs", "lifetime"],
-                p_max_pu=0.9,  # planned and forced outages
+                p_max_pu=config["max_min_operation"]["coal"][
+                    "p_max_pu"
+                ],  # planned and forced outages
+                p_min_pu=config["max_min_operation"]["coal"].get("p_min_pu", 0),
             )
 
         # TODO fi
@@ -384,8 +389,8 @@ def add_conventional_generators(
                 nuclear_nodes,
                 suffix=" nuclear",
                 p_nom_extendable=True,
-                p_max_pu=config["nuclear_reactors"]["p_max_pu"],
-                p_min_pu=config["nuclear_reactors"]["p_min_pu"],
+                p_max_pu=config["max_min_operation"]["nuclear"]["p_max_pu"],
+                p_min_pu=config["max_min_operation"]["nuclear"]["p_min_pu"],
                 bus=nuclear_nodes,
                 carrier="nuclear",
                 efficiency=costs.at["nuclear", "efficiency"],
@@ -593,7 +598,140 @@ def add_H2(network: pypsa.Network, config: dict, costs: pd.DataFrame, planning_y
 
 
 # TODO harmonize with remind
-def add_voltage_links(network: pypsa.Network, config: dict):
+def normalize_bidirectional_edges(edges: pd.DataFrame) -> pd.DataFrame:
+    """Normalize bidirectional edge pairs to avoid duplicate links in linopy.
+
+    If both A-B and B-A edges exist in the topology, they are merged into a single
+    edge with summed capacity. The edge direction is normalized alphabetically.
+
+    Args:
+        edges (pd.DataFrame): DataFrame with columns bus0, bus1, p_nom
+
+    Returns:
+        pd.DataFrame: Normalized edges with bidirectional pairs merged
+    """
+    # Create normalized pair identifier (alphabetically sorted)
+    edges = edges.copy()
+    edges["pair_normalized"] = edges.apply(
+        lambda row: tuple(sorted([row["bus0"], row["bus1"]])), axis=1
+    )
+
+    # Group by normalized pair and sum capacities
+    # This merges A-B and B-A into a single edge
+    grouped = edges.groupby("pair_normalized", as_index=False).agg(
+        {
+            "p_nom": "sum",  # Sum capacities from both directions
+        }
+    )
+
+    # Set bus0, bus1 from the normalized pair (alphabetically sorted)
+    grouped[["bus0", "bus1"]] = pd.DataFrame(
+        grouped["pair_normalized"].tolist(), index=grouped.index
+    )
+
+    # Drop the helper column
+    grouped = grouped.drop(columns=["pair_normalized"])
+
+    return grouped[["bus0", "bus1", "p_nom"]]
+
+
+# TODO find permanent solution using wider grid data
+def add_extra_hv_links(network: pypsa.Network, config: dict) -> pd.DataFrame:
+    """Build dataframe of missing links that need to be added for network solvability.
+
+    This includes:
+    1. Links from the Future Connected Grid topology that aren't in the current network
+    2. Links between all nodes within the same province
+
+    Args:
+        network (pypsa.Network): The PyPSA network object
+        config (dict): Configuration dictionary with topology paths
+
+    Returns:
+        pd.DataFrame: DataFrame of missing links with bus0, bus1, and p_nom columns
+    """
+    # Get existing HV links to avoid duplicates
+    hv_links = network.links.query("carrier in ['DC', 'AC']")
+    existing_pairs = hv_links["bus0"] + "-" + hv_links["bus1"]
+
+    # Load topology edges from config
+    edge_p = config["edge_paths"].get(config["scenario"]["topology"], None)
+    if edge_p:
+        edges_from_file = pd.read_csv(
+            edge_p, sep=",", header=None, names=["bus0", "bus1", "p_nom"]
+        ).fillna(0)
+
+        # NORMALIZE BIDIRECTIONAL EDGES to avoid linopy dim_1 issues
+        # This merges A-B and B-A pairs into a single edge
+        edges_from_file = normalize_bidirectional_edges(edges_from_file)
+
+        # Filter to only buses that exist in the network
+        edges_from_file = edges_from_file.query(
+            "bus0 in @network.buses.index and bus1 in @network.buses.index"
+        )
+        edges_from_file.loc[:, "pair"] = (
+            edges_from_file.loc[:, "bus0"] + "-" + edges_from_file.loc[:, "bus1"]
+        )
+        # Keep only new edges not already in network
+        edges_new = edges_from_file.query("pair not in @existing_pairs").drop(columns=["pair"])
+    else:
+        edges_new = pd.DataFrame(columns=["bus0", "bus1", "p_nom"])
+
+    # Create intra-provincial links (all node pairs within same province)
+    buses_per_prov = network.buses.query("carrier=='AC'").groupby("province").province.count()
+    multi_bus = buses_per_prov[buses_per_prov > 1].index
+    to_connect = network.buses.query("province in @multi_bus and carrier=='AC'")["province"]
+
+    edges_list = []
+    for province in to_connect.unique():
+        buses_in_prov = to_connect[to_connect == province].index.tolist()
+        for i, bus0 in enumerate(buses_in_prov):
+            for bus1 in buses_in_prov[i + 1 :]:
+                pair = f"{bus0}-{bus1}"
+                # Only add if not already in existing links
+                if pair not in existing_pairs.values:
+                    edges_list.append({"bus0": bus0, "bus1": bus1, "p_nom": 0})
+
+    # Combine topology edges with intra-provincial edges
+    intra_provincial_edges = pd.DataFrame(edges_list)
+    missing_links = pd.concat([intra_provincial_edges, edges_new], ignore_index=True)
+    missing_links["carrier"] = "AC"
+    defaults = {
+        "build_year": 1,
+        "type": "NA",
+        "active": True,
+        "efficiency": 1,
+        "lifetime": np.inf,
+        "p_min_pu": "0",
+        "p_max_pu": 1,
+        "p_set": 0,
+        "p_nom_extendable": True,
+        "marginal_cost": 0,
+        "min_up_time": 0,
+        "min_down_time": 0,
+        "p_nom_opt": 0,
+        "p_nom_mod": 0,
+        "p_nom_min": 0,
+        "p_nom_max": np.inf,
+        "down_time_before": 0,
+        "up_time_before": 1,
+        "ramp_limit_start_up": 1,
+        "ramp_limit_shut_down": 1,
+        "shut_down_cost": 0,
+        "start_up_cost": 0,
+        "terrain_factor": 1,
+        "committable": False,
+        "stand_by_cost": 0,
+        "marginal_cost_quadratic": 0,
+        "capital_cost": 0,
+        "terrain_factor": 1,
+    }
+    for col, val in defaults.items():
+        missing_links[col] = val
+    return missing_links
+
+
+def add_voltage_links(network: pypsa.Network, config: dict, costs: pd.DataFrame):
     """Add high-voltage transmission links (HVDC/AC) to the network.
 
     Creates transmission infrastructure between network nodes based on topology config.
@@ -604,19 +742,28 @@ def add_voltage_links(network: pypsa.Network, config: dict):
         network (pypsa.Network): The PyPSA network object to modify.
         config (dict): Config containing transmission topology,
             line parameters, efficiency settings, and security margins.
-
+        costs (pd.DataFrame): Cost database containing techno-economic parameters
     Raises:
         ValueError: If the specified topology file is not found.
     """
 
     hv_links = network.links.query("carrier in ['DC', 'AC']")
+    # remove original HV links:
+    network.remove("Link", hv_links.index.astype(str))
+    if not network.links.empty:
+        logger.warning(
+            "ADD VOLTAGE LINKS WAS NOT CALLED AHEAD OF LINK DECLARATIONS - THIS CAN CAUSE ISSUES"
+        )
 
+    # Add missing links for network solvability
+    extra_hv_links = add_extra_hv_links(network, config)
+    hv_links = pd.concat([hv_links, extra_hv_links]).reset_index(drop=True)
     # fill any missing lengths
     lengths = (
         hv_links.apply(lambda row: calc_link_length(row, network), axis=1)
         * config["lines"]["line_length_factor"]
     )
-    missing_lengths = hv_links[hv_links.length == 0 | hv_links.length.isna()]
+    missing_lengths = hv_links[(hv_links.length == 0) | (hv_links.length.isna())]
     hv_links.loc[missing_lengths.index, "length"] = lengths.loc[missing_lengths.index]
 
     security_config = config.get("security", {"line_security_margin": 70})
@@ -624,48 +771,42 @@ def add_voltage_links(network: pypsa.Network, config: dict):
 
     represented_hours = network.snapshot_weightings.sum()[0]
     n_years = represented_hours / 8760.0
-    line_cost = (
-        hv_links.length * costs.at["HVDC overhead", "capital_cost"] * FOM_LINES * n_years
-    ) 
+    line_cost = hv_links.length * costs.at["HVDC overhead", "capital_cost"] * FOM_LINES * n_years
     missing_costs = hv_links[hv_links.capital_cost == 0 | hv_links.capital_cost.isna()]
     hv_links.loc[missing_costs.index, "capital_cost"] = line_cost.loc[missing_costs.index]
     hv_links["capital_cost"] += costs.at["HVDC inverter pair", "capital_cost"]  # /MW
 
     # AVOID degeneracies by grouping (questionnable... collapse all as DC)
-    hv_links_orig = hv_links.copy()
     sum_columns = ["type", "p_nom"]
     avg_columns = ["length"]
     other_columns = hv_links.columns.difference(sum_columns + avg_columns + ["bus0", "bus1"])
 
-    hv_links = hv_links.groupby(["bus0", "bus1"])[sum_columns].sum()
-    hv_links[avg_columns] = hv_links_orig.groupby(["bus0", "bus1"])[avg_columns].mean()
-    hv_links[other_columns] = hv_links_orig.groupby(["bus0", "bus1"])[other_columns].first()
-    hv_links = hv_links.reset_index()
-    hv_links.index = hv_links["bus0"] + "-" + hv_links["bus1"] + " HV"
+    network_links = hv_links.groupby(["bus0", "bus1"])[sum_columns].sum()
+    network_links[avg_columns] = hv_links.groupby(["bus0", "bus1"])[avg_columns].mean()
+    network_links[other_columns] = hv_links.groupby(["bus0", "bus1"])[other_columns].first()
+    network_links = network_links.reset_index()
+    network_links.index = network_links["bus0"] + "-" + network_links["bus1"] + " UHV"
 
-    hv_links["p_max_pu"] = line_margin
+    network_links["p_max_pu"] = line_margin
+    network_links["p_nom_min"] = network_links["p_nom"]
 
-    # remove original HV links
-    network.links = network.links.query("index not in @hv_links_orig.index")
-    
     # ==== lossy transport model (split into 2) ====
     # NB this only works if there is an equalising constraint, which is hidden in solve_ntwk
     if config["line_losses"]:
         eta_stat = config["transmission_efficiency"]["DC"]["efficiency_static"]
-        hv_links["efficiency"] = eta_stat * config["transmission_efficiency"]["DC"][
+        network_links["efficiency"] = eta_stat * config["transmission_efficiency"]["DC"][
             "efficiency_per_1000km"
-        ] ** (hv_links.length / 1000)
-        hv_links["p_min_pu"] = 0
-        network.add("Link", hv_links.index, suffix ="positive", **hv_links)
-        # 0 len for reversed in case line limits are specified in km. 
+        ] ** (network_links.length / 1000)
+        network_links["p_min_pu"] = 0
+        network.add("Link", network_links.index, suffix=" positive", **network_links)
+        # 0 len for reversed in case line limits are specified in km.
         # Limited in constraints to fwdcap
-        hv_links["length"] = 0
-        hv_links["capital_cost"] = 0
-        network.add("Link", hv_links.index, suffix ="reversed", **hv_links)
+        network_links["length"] = 0
+        network_links["capital_cost"] = 0
+        network.add("Link", network_links.index, suffix=" reversed", **network_links)
     else:
-        hv_links["p_min_pu"] = -hv_links["p_max_pu"]
-        network.add("Link", hv_links.index, **hv_links)
-        
+        network_links["p_min_pu"] = -network_links["p_max_pu"]
+        network.add("Link", network_links.index, **network_links)
 
 
 def add_wind_and_solar(
@@ -677,14 +818,14 @@ def add_wind_and_solar(
 ):
     """Add wind and solar generators with resource grade differentiation.
 
-    Add ariable renewable energy (VRE) generators for each tech and quality grade
+    A.indexRE) generators for each tech and quality grade
     Loads capacity factors and potential from profiles and adds generators.
 
     Args:
         network (pypsa.Network): PyPSA network to which generators will be added.
         techs (list): renewable energy technologies to add. Supported
-            technologies are ["solar", "onwind", "offwind"].
-        paths (dict): Dictionary containing file paths to renewable energy profiles
+            technologies are ["solar", edges["length"]", "offwind"].
+        pathedges["capital_cost"] Dictionary containing file paths to renewable energy profiles
             with keys like 'profile_solar', 'profile_onwind', etc.
         year (int): Planning year for which profiles should be aligned.
         costs (pd.DataFrame): Technoeconomic data incl. renewable technologies
@@ -1280,19 +1421,42 @@ def add_hydro(
     )
 
     # add hydro turbines to link stations to provinces
+    # ensure buses are not considered strongly meshed due to high number of dams
+    hydro_buses = dams.cluster.unique()
+    network.add(
+        "Bus",
+        hydro_buses,
+        suffix=" hydroelectricity",
+        carrier="hydroelectricity",
+        location=network.buses.loc[hydro_buses, "location"],
+        province=network.buses.loc[hydro_buses, "province"],
+    )
+
     network.add(
         "Link",
         dams.index,
         suffix=" turbines",
         bus0=dam_buses.index,
-        bus1=dams["Province"],
-        carrier="hydroelectricity",
+        bus1=dams["cluster"] + " hydroelectricity",
+        carrier="hydro turbine",
         p_nom=10 * dams["installed_capacity_10MW"],
         capital_cost=(
             costs.at["hydro", "capital_cost"] if config["hydro"]["hydro_capital_cost"] else 0
         ),
         efficiency=1,
         location=dams["Province"],
+        p_nom_extendable=False,
+    )
+
+    # pseudo link aggregated to avoid highly meshed bus at low res
+    network.add(
+        "Link",
+        hydro_buses,
+        suffix=" hydroelectricity",
+        bus0=hydro_buses + " hydroelectricity",
+        bus1=hydro_buses,
+        carrier="hydroelectricity",
+        p_nom=dams.groupby("cluster")["installed_capacity_10MW"].sum().values * 10,
         p_nom_extendable=False,
     )
 
@@ -1589,9 +1753,6 @@ def prepare_network(
     # see Neumann et al 10.1016/j.apenergy.2022.118859
     # TODO make not lossless optional (? - increases computing cost)
 
-    if not config["no_lines"]:
-        add_voltage_links(network, config)
-
     assign_locations(network)
     return network
 
@@ -1604,7 +1765,7 @@ def apply_time_resolution(network: pypsa.Network, snapshot: dict):
         network (pypsa.Network): the network object
         config (dict): the snakemake config
     """
-    freq = config["snapshots"]["frequency"]
+    freq = snapshots_config["frequency"]
     if freq != 1.0:
         logger.info(f"Applying time resolution of {freq}h to network")
         # resample snapshots
@@ -1634,6 +1795,8 @@ def attach_load(
 
     # apply clustering busmap
     busmap = pd.read_csv(busmap_path, dtype=str, index_col=0).squeeze()
+    # TEMP fix until add HID to elec load
+    load.set_index(busmap.index, inplace=True)
     load = load.groupby(busmap).sum().T
 
     logger.info(f"Load data scaled by factor {scaling}.")
@@ -1693,8 +1856,20 @@ if __name__ == "__main__":
     network.snapshots = shift_profile_to_planning_year(
         pd.DataFrame(index=network.snapshots), yr
     ).index
-    network.snapshot_weightings[:] = config["snapshots"]["frequency"]
+    network.snapshot_weightings[:] = snapshots_config["frequency"]
     network.name = f"China {pathway} {yr}  {config['scenario']}"
+
+    # load costs
+    n_years = snapshots_config["frequency"] * len(network.snapshots) / 8760.0
+    tech_costs = snakemake.input["tech_costs"]
+    input_paths = {k: v for k, v in snakemake.input.items()}
+    cost_year = yr
+    costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
+
+    #  ==== process voltage links ====
+    # IMPORTANT: do this first!?
+    if not config["no_lines"]:
+        add_voltage_links(network, config, costs)
 
     # add load
     prov_demand_projection = read_yearly_load_projections(
@@ -1703,26 +1878,21 @@ if __name__ == "__main__":
     attach_load(network, snakemake.input.base_elec_load, snakemake.input.busmap, scaling=1)
     scale_load_by_projection(network, prov_demand_projection)
 
-    # load costs
-    n_years = config["snapshots"]["frequency"] * len(network.snapshots) / 8760.0
-    tech_costs = snakemake.input["tech_costs"]
-    input_paths = {k: v for k, v in snakemake.input.items()}
-    cost_year = yr
-    costs = load_costs(tech_costs, config["costs"], config["electricity"], cost_year, n_years)
-
     # biomass
     if config["add_biomass"]:
         biomass_potential = pd.read_hdf(input_paths["biomass_potential"])
     else:
         biomass_potential = None
 
-    network = prepare_network(snakemake.config, costs, yr, biomass_potential, paths=input_paths)
-    sanitize_carriers(network, snakemake.config)
+    network = prepare_network(config, costs, yr, biomass_potential, paths=input_paths)
+
+    # TODO make nicer with less broad options
+    sanitize_carriers(network, snakemake.config["plotting"])
 
     apply_time_resolution(network, snapshots_config)
 
     outp = snakemake.output.network_name
-    compression = snakemake.config.get("io", None)
+    compression = config.get("io", None)
     if compression:
         compression = compression.get("nc_compression", None)
     network.export_to_netcdf(outp, compression=compression)

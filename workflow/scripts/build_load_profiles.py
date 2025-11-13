@@ -113,6 +113,7 @@ def build_daily_heat_demand_profiles(
     heat_demand_config: dict,
     atlite_heating_hr_shift: int,
     switch_month_day: bool = True,
+    atlite_year=2018,
 ) -> pd.DataFrame:
     """Build the heat demand profile according to forecast demands
 
@@ -128,8 +129,6 @@ def build_daily_heat_demand_profiles(
     Returns:
         pd.DataFrame: regional daily heating demand with April to Sept forced to 0
     """
-    atlite_year = get_cutout_params(snakemake.config)["weather_year"]
-
     pop_matrix = sp.sparse.csr_matrix(pop_map.T)
     index = pop_map.columns
     index.name = "provinces"
@@ -355,15 +354,20 @@ if __name__ == "__main__":
 
     planning_horizons = int(snakemake.wildcards["planning_horizons"])
     config = snakemake.config
+    weather_year = snakemake.params.weather_year
+    scenario_config = snakemake.params.scenarios
+    heat_config = snakemake.params.heat_demand
+
+    snapshots_config = snakemake.params.snapshots
 
     date_range = make_periodic_snapshots(
         year=planning_horizons,
         freq="1h",
-        start_day_hour=config["snapshots"]["start"],
-        end_day_hour=config["snapshots"]["end"],
-        bounds=config["snapshots"]["bounds"],
+        start_day_hour=snapshots_config["start"],
+        end_day_hour=snapshots_config["end"],
+        bounds=snapshots_config["bounds"],
         tz=None,
-        end_year=(None if not config["snapshots"]["end_year_plus1"] else planning_horizons + 1),
+        end_year=(None if not snapshots_config["end_year_plus1"] else planning_horizons + 1),
     )
 
     # project the electric load based on the demand
@@ -393,7 +397,7 @@ if __name__ == "__main__":
         space_heat_demand_total = space_heat_demand_total.squeeze()
         hot_water_total = _read_iea_hot_water(snakemake.input.hot_water_demand)
         hot_water_total = _extend_iea_projections(
-            hot_water_total, config["scenario"]["planning_horizons"]
+            hot_water_total, scenario_config["planning_horizons"]
         )
         atlite_hour_shift = calc_atlite_heating_timeshift(date_range, use_last_ts=False)
         cutout = atlite.Cutout(snakemake.input.cutout)
@@ -401,9 +405,10 @@ if __name__ == "__main__":
         reg_daily_hd = build_daily_heat_demand_profiles(
             cutout,
             pop_map,
-            config["heat_demand"],
+            heat_config,
             atlite_heating_hr_shift=atlite_hour_shift,
             switch_month_day=True,
+            atlite_year=weather_year,
         )
 
         # Scale the degree day to reference values

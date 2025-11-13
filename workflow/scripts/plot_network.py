@@ -70,7 +70,7 @@ def plot_map(
     else:
         missing = bus_sizes.index.difference(bus_colors.index)
     if not missing.empty:
-        raise ValueError(f"Missing colors for bus carriers: {missing.tolist()}")
+        t
 
     network.plot(
         bus_sizes=bus_sizes,
@@ -248,7 +248,7 @@ def plot_cost_map(
 
     # TODO scale edges by cost from capex summary
     def calc_link_plot_width(row, carrier="AC", additions=False):
-        if row.length == 0 or row.carrier != carrier or not row.plottable:
+        if row.length == 0 or row.carrier != carrier:
             return 0
         elif additions:
             return row.p_nom
@@ -413,7 +413,7 @@ def plot_energy_map(
     # make the statistics. Buses not assigned to a region will be included
     # if they are linked to a region (e.g. turbine link w carrier = hydroelectricity)
     energy_supply = network.statistics.supply(
-        groupby=get_location_and_carrier,
+        groupby=pypsa.statistics.get_bus_and_carrier,
         bus_carrier=carrier,
         comps=components,
     )
@@ -458,8 +458,8 @@ def plot_energy_map(
     tech_colors = make_nice_tech_colors(opts["tech_colors"], opts["nice_names"])
 
     # make sure plot isnt overpopulated
-    def calc_link_plot_width(row, carrier="AC"):
-        if row.length == 0 or row.carrier != carrier or not row.plottable:
+    def calc_link_plot_width(row, carrier="AC", min_p=1):
+        if row.length == 0 or row.carrier != carrier or row.p_nom_opt < min_p:
             return 0
         else:
             return row.p_nom_opt
@@ -650,7 +650,7 @@ if __name__ == "__main__":
             topology="current+FCG",
             co2_pathway="exp175default",
             # co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2",
-            planning_horizons="2040",
+            planning_horizons="2025",
             heating_demand="positive",
             # configfiles=["resources/tmp/remind_coupled_cg.yaml"],
         )
@@ -666,9 +666,7 @@ if __name__ == "__main__":
 
     n = pypsa.Network(snakemake.input.network)
     # determine whether links correspond to network nodes
-    determine_plottable(n)
-    # from _helpers import assign_locations
-    # assign_locations(n)
+    # determine_plottable(n)
 
     # TODO remove
     # backward compatibility for old network files

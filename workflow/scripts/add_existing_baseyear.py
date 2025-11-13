@@ -113,14 +113,14 @@ def add_base_year(n: pypsa.Network, plan_year: int):
         comp.loc[mask, "build_year"] = plan_year
 
 
-def add_existing_vre_capacities(
+def calc_existing_vre_capacities(
     n: pypsa.Network,
     costs: pd.DataFrame,
     vre_caps: pd.DataFrame,
     config: dict,
 ) -> pd.DataFrame:
     """
-    Add existing VRE capacities to the network and distribute them by vre grade potential.
+    Distribute existing VRE capacities by vre grade potential.
     Adapted from pypsa-eur but the VRE capacities are province resolved.
 
     NOTE that using this function requires adding the land-use constraint in solve_network so
@@ -178,7 +178,7 @@ def add_existing_vre_capacities(
                         df_agg.at[name, "grouping_year"] = int(year)
                         df_agg.at[name, "lifetime"] = costs.at[cost_key, "lifetime"]
                         df_agg.at[name, "DateOut"] = year + costs.at[cost_key, "lifetime"] - 1
-                        df_agg.at[name, "bus"] = bus
+                        df_agg.at[name, "cluster"] = bus
                         df_agg.at[name, "resource_class"] = bin_id
 
     if df_agg.empty:
@@ -263,12 +263,12 @@ def add_power_capacities_installed_before_baseyear(
     logger.info(df.grouping_year.unique())
     # TODO: exclude collapse of coal & coal CHP IF CCS retrofitting is enabled
     if config["existing_capacities"].get("collapse_years", False):
-        df.grouping_year = 1  # 0 is default
+        df.grouping_year = "brownfield"  # 0 is default
     df.grouping_year = df.grouping_year.astype(int, errors="ignore")
 
     df_ = df.pivot_table(
         index=["grouping_year", "tech_clean", "resource_class"],
-        columns="bus",
+        columns="cluster",
         values="Capacity",
         aggfunc="sum",
     )
@@ -281,7 +281,8 @@ def add_power_capacities_installed_before_baseyear(
     # TODO do we really need to loop over the years? / so many things?
     # something like df_.unstack(level=0) would be more efficient
     for grouping_year, generator, resource_grade in df_.index:
-        build_year = 1 if grouping_year == "brownwfield" else grouping_year
+        build_year = 1 if grouping_year == "brownfield" else grouping_year
+
         logger.info(f"Adding existing generator {generator} with year grp {grouping_year}")
         if carrier_map.get(generator, "missing") not in defined_carriers:
             logger.warning(
@@ -324,7 +325,10 @@ def add_power_capacities_installed_before_baseyear(
                 location=buses,
             )
 
-        elif generator in ["nuclear", "coal power plant", "biomass", "oil"]:
+        # TODO fix p_max_pu for coal!!!
+        elif generator in ["nuclear", "coal", "biomass", "oil"]:
+            p_max_pu = config["max_min_operation"].get(generator, {}).get("p_max_pu", 1.0)
+            p_min_pu = config["max_min_operation"].get(generator, {}).get("p_min_pu", 0.0)
             n.add(
                 "Generator",
                 capacity.index,
@@ -335,8 +339,8 @@ def add_power_capacities_installed_before_baseyear(
                 p_nom_max=capacity,
                 p_nom_min=capacity,
                 p_nom_extendable=False,
-                p_max_pu=config["nuclear_reactors"]["p_max_pu"] if generator == "nuclear" else 1,
-                p_min_pu=config["nuclear_reactors"]["p_min_pu"] if generator == "nuclear" else 0,
+                p_max_pu=p_max_pu,
+                p_min_pu=p_min_pu,
                 marginal_cost=costs.at[costs_key, "marginal_cost"],
                 efficiency=costs.at[costs_key, "efficiency"] * (1 - eff_penalty_hist),
                 build_year=build_year,
@@ -792,12 +796,14 @@ if __name__ == "__main__":
 
     vre_caps = existing_capacities.query("Tech in @vre_techs | Fueltype in @vre_techs")
     # vre_caps.loc[:, "Country"] = coco.CountryConverter().convert(["China"], to="iso2")
-    vres = add_existing_vre_capacities(n, costs, vre_caps, config)
+    vres = calc_existing_vre_capacities(n, costs, vre_caps, config)
     # TODO: fix bug, installed has less vre/wind cap than vres.
     installed = pd.concat(
         [existing_capacities.query("Tech not in @vre_techs & Fueltype not in @vre_techs"), vres],
         axis=0,
     )
+    if installed.cluster.isna().any():
+        raise ValueError("Clusters could not be assigned to all existing capacities")
 
     # add to the network
     add_power_capacities_installed_before_baseyear(n, costs, config, installed)

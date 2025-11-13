@@ -71,7 +71,7 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
         columns={
             "Technology": "type",
             "Capacity (MW)": "p_nom",
-            "Transmission Distance（km）": "length"
+            "Transmission Distance（km）": "length",
         },
         inplace=True,
     )
@@ -117,7 +117,9 @@ def add_hv_for_sparse_regions(network: pypsa.Network, hv_data: pd.DataFrame):
     pass
 
 
-def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid", country = "CN") -> pd.DataFrame:
+def _build_admin2_buses(
+    admin_l2_shapes: gpd.GeoDataFrame, center="centroid", country="CN"
+) -> pd.DataFrame:
     """Build admin level 2 buses from admin_l2_shapes geodataframe centers
 
     Args:
@@ -126,29 +128,32 @@ def _build_admin2_buses(admin_l2_shapes: gpd.GeoDataFrame, center="centroid", co
     Returns:
         pd.DataFrame: DataFrame containing bus information
     """
+    # HID index
+    shapes = admin_l2_shapes[["NAME_1", "NAME_2", "NL_NAME_2", "geometry"]].copy()
+    shapes.index = shapes.NAME_1 + "-" + shapes.groupby("NAME_1").cumcount().astype(str)
     if center == "centroid":
         buses = pd.DataFrame(
-            index=admin_l2_shapes.index,
+            index=shapes.index,
             data={
-                "x": admin_l2_shapes.geometry.centroid.x,
-                "y": admin_l2_shapes.geometry.centroid.y,
-                "province": admin_l2_shapes.NAME_1,
-                "prefecture": admin_l2_shapes.NAME_2,
-                "prefecture_nl": admin_l2_shapes.NL_NAME_2,
+                "x": shapes.geometry.centroid.x,
+                "y": shapes.geometry.centroid.y,
+                "province": shapes.NAME_1,
+                "prefecture": shapes.NAME_2,
+                "prefecture_nl": shapes.NL_NAME_2,
                 "country": country,
             },
         )
         return buses
-    
+
     elif center == "representative_point":
         buses = pd.DataFrame(
-            index=admin_l2_shapes.index,
+            index=shapes.index,
             data={
-                "x": admin_l2_shapes.geometry.representative_point().x,
-                "y": admin_l2_shapes.geometry.representative_point().y,
-                "province": admin_l2_shapes.NAME_1,
-                "prefecture": admin_l2_shapes.NAME_2,
-                "prefecture_nl": admin_l2_shapes.NL_NAME_2,
+                "x": shapes.geometry.representative_point().x,
+                "y": shapes.geometry.representative_point().y,
+                "province": shapes.NAME_1,
+                "prefecture": shapes.NAME_2,
+                "prefecture_nl": shapes.NL_NAME_2,
             },
         )
         return buses
@@ -166,28 +171,25 @@ def _set_uhv_lines(network: pypsa.Network, lines: pd.DataFrame, buses: pd.DataFr
     """
 
     # assign buses
-    lines["bus0"] = (
-        lines.merge(
-            buses.reset_index(),
+    lines["bus0"] = lines.merge(
+            network.buses.reset_index(),
             how="left",
             left_on=["Start_Region", "Start_Admin2"],
             right_on=["province", "prefecture"],
             suffixes=("", "_buses"),
-        )["index"]
-        .fillna(-1)
-        .astype(int)
-        .astype(str)
-    )
-    lines["bus1"] = lines.merge(
-        buses.reset_index(),
-        how="left",
-        left_on=["End_Region", "End_Admin2"],
-        right_on=["province", "prefecture"],
-        suffixes=("", "_buses"),
-    )["index"].fillna(-1).astype(int).astype(str)
+        )["Bus"]
 
-    not_matched = lines.query("`bus0`=='-1' or `bus1`=='-1'")[
-        ["UHV Power Transmission Line", "Start_Region", "Start_Admin2", "End_Region", "End_Admin2"]]
+    lines["bus1"] = lines.merge(
+            network.buses.reset_index(),
+            how="left",
+            left_on=["End_Region", "End_Admin2"],
+            right_on=["province", "prefecture"],
+            suffixes=("", "_buses"),
+        )["Bus"]
+
+    not_matched = lines.query("`bus0`.isna() or `bus1`.isna()")[
+        ["UHV Power Transmission Line", "Start_Region", "Start_Admin2", "End_Region", "End_Admin2"]
+    ]
     if not not_matched.empty:
         raise ValueError(f"The following UHV lines have unmatched buses: {not_matched}")
 
@@ -263,7 +265,7 @@ def build_base_network(
     Returns:
         pypsa.Network: the base network at admin l2 resolution
     """
-    
+
     _validate_line_regions(lines, admin_l2_shapes)
 
     network = pypsa.Network(name="Base Network")
@@ -319,7 +321,7 @@ if __name__ == "__main__":
     l1_ok = (network.buses.reset_index().province == admin_l2_shapes.reset_index().NAME_1).all()
     l2_ok = (network.buses.reset_index().prefecture == admin_l2_shapes.reset_index().NAME_2).all()
     if not (l1_ok and l2_ok):
-        raise ValueError("Admin level 2 bus order does not match shapes order") 
+        raise ValueError("Admin level 2 bus order does not match shapes order")
 
     compression = snakemake.config.get("io", None)
     if compression:

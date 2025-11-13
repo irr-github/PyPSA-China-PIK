@@ -94,7 +94,11 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
 
     # split CHP (potential issue: split before type split. After would be better)
     if gem_cfg["CHP"].get("split", False):
-        GEM.loc[:, "CHP_bool"] = GEM.loc[:, "CHP"].map({'not found': False, "yes": True, "no": False, np.nan: False}).fillna(False)
+        GEM.loc[:, "CHP_bool"] = (
+            GEM.loc[:, "CHP"]
+            .map({"not found": False, "yes": True, "no": False, np.nan: False})
+            .fillna(False)
+        )
         chp_mask = GEM[GEM["CHP_bool"] == True].index
 
         aliases = gem_cfg["CHP"].get("aliases", [])
@@ -161,7 +165,9 @@ def assign_year_bins(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.Da
     return df
 
 
-def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_nodes: gpd.GeoDataFrame) -> pd.DataFrame:
+def assign_node_from_gps(
+    ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_nodes: gpd.GeoDataFrame
+) -> pd.DataFrame:
     """
     Assign plant node based on GPS coordinates with robust boundary handling.
 
@@ -176,27 +182,28 @@ def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_no
         pd.DataFrame: DataFrame with assigned nodes and diagnostic columns
     """
     import logging
+
     logger = logging.getLogger(__name__)
 
     # Create GeoDataFrame from lat/lon, project to metric CRS
     gdf = gpd.GeoDataFrame(
-        ppl, 
+        ppl,
         geometry=ppl.apply(lambda row: Point(row["Longitude"], row["Latitude"]), axis=1),
-        crs="EPSG:4326"
+        crs="EPSG:4326",
     )
     # manual fix to make clearly not shanghai
-    gdf.query("`Plant name`=='Jiangsu Rudong (China Guangdong Nuclear) Offshore wind farm'").Latitude = 32.8
+    gdf.query(
+        "`Plant name`=='Jiangsu Rudong (China Guangdong Nuclear) Offshore wind farm'"
+    ).Latitude = 32.8
     gdf_proj = gdf.to_crs("EPSG:3036")
     nodes_proj = nodes.to_crs("EPSG:3036")
 
     # First pass: spatial join within
     assigned = gdf.sjoin(nodes, predicate="within", how="left")
     # Identify unassigned (likely on boundaries)
-    unassigned_mask = assigned['cluster'].isna()
+    unassigned_mask = assigned["cluster"].isna()
     if unassigned_mask.any():
-        logger.info(
-            f"Assigning {unassigned_mask.sum()} boundary powerplants via nearest neighbor"
-        )
+        logger.info(f"Assigning {unassigned_mask.sum()} boundary powerplants via nearest neighbor")
 
         # Get original indices of unassigned powerplants
         unassigned_indices = assigned[unassigned_mask].index
@@ -207,30 +214,30 @@ def assign_node_from_gps(ppl: pd.DataFrame, nodes: gpd.GeoDataFrame, offshore_no
             nodes_proj.to_crs("EPSG:3036"),
             how="left",
             max_distance=10000,  # 10km sanity check
-            distance_col="boundary_distance_m"
+            distance_col="boundary_distance_m",
         )
         assigned.loc[unassigned_mask, "cluster"] = nearest_assigned["cluster"]
-        
+
     # Try offshore shapes (wind turbines and)
-    still_unassigned = assigned['cluster'].isna()
+    still_unassigned = assigned["cluster"].isna()
     assigned_offshore = assigned.loc[still_unassigned].sjoin_nearest(
         offshore_nodes.reset_index().to_crs("EPSG:3036"),
         how="left",
         distance_col="boundary_distance_m",
-        max_distance=400000) # 300km sanity check
+        max_distance=400000,
+    )  # 300km sanity check
     # ugly hack in case at (inexact) border, flip coin
     idx = assigned_offshore.index.drop_duplicates()
-    assigned.loc[still_unassigned, 'cluster'] = assigned_offshore.loc[idx, 'cluster_right'].values
+    assigned.loc[still_unassigned, "cluster"] = assigned_offshore.loc[idx, "cluster_right"].values
 
     # Report issues
-    still_unassigned = assigned['cluster'].isna().sum()
+    still_unassigned = assigned["cluster"].isna().sum()
     if still_unassigned > 0:
         logger.error(f"{still_unassigned} powerplants still unassigned after fallback!")
-        failed_plants = assigned[assigned['cluster'].isna()]['Plant name'].tolist()
+        failed_plants = assigned[assigned["cluster"].isna()]["Plant name"].tolist()
         logger.error(f"Failed plants: {failed_plants[:5]}...")
-        
-    return assigned.drop(columns=['geometry', 'index_right'], errors='ignore')
 
+    return assigned.drop(columns=["geometry", "index_right"], errors="ignore")
 
 
 if __name__ == "__main__":
@@ -245,7 +252,7 @@ if __name__ == "__main__":
 
     configure_logging(snakemake, logger=logger)
 
-    config = snakemake.params.config
+    # config = snakemake.params.config
     params = snakemake.params
     cfg_GEM = params["gem"]
     grouped_years = params["grouped_years"]
@@ -253,11 +260,8 @@ if __name__ == "__main__":
 
     gem_data = load_gem_excel(snakemake.input.GEM_plant_tracker, sheetname="Power facilities")
 
-
     cleaned = clean_gem_data(gem_data, cfg_GEM)
-    cleaned = assign_year_bins(
-        cleaned, grouped_years, base_year=cfg_GEM["base_year"]
-    )
+    cleaned = assign_year_bins(cleaned, grouped_years, base_year=cfg_GEM["base_year"])
 
     processed, requested = cleaned.Type.unique(), set(snakemake.params.technologies)
     missing = requested - set(processed)

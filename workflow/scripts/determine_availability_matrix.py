@@ -29,7 +29,6 @@ import atlite
 import geopandas as gpd
 import numpy as np
 from _helpers import configure_logging, mock_snakemake
-from constants import OFFSHORE_WIND_NODES
 from pandas import concat
 
 logger = logging.getLogger(__name__)
@@ -52,7 +51,7 @@ if __name__ == "__main__":
         regions = gpd.read_file(snakemake.input.regions_onshore)
     else:
         regions = gpd.read_file(snakemake.input.regions_offshore)
-    regions = regions.set_index("cluster").rename_axis("Bus")
+    regions = regions.set_index("cluster").rename_axis("bus")
     buses = regions.index
 
     cutout = atlite.Cutout(snakemake.input.cutout)
@@ -92,7 +91,7 @@ if __name__ == "__main__":
         excluder.add_raster(snakemake.input["Bare_raster"], invert=True, crs=3035)
         excluder.add_raster(snakemake.input["Shrubland_raster"], invert=True, crs=3035)
 
-    exclude_built_up = not params.get("allow_built_up", False)
+    exclude_built_up = not params.get("allow_built_up", True)
     excluder.add_raster(snakemake.input["Build_up_raster"], invert=exclude_built_up, crs=3035)
 
     if params.get("max_depth"):

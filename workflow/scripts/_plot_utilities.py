@@ -12,27 +12,27 @@ import pandas as pd
 import pypsa
 
 
-def validate_hex_colors(tech_colors: dict[str, str], fill_color = "#999999") -> dict[str, str]:
+def validate_hex_colors(tech_colors: dict[str, str], fill_color="#999999") -> dict[str, str]:
     """Validate and standardize hex color codes in technology color mappings.
-    
+
     Ensures all color codes in the technology colors dictionary are valid hexadecimal
     color codes. Invalid or malformed colors are replaced with a default gray color.
-    
+
     Args:
         tech_colors (Dict[str, str]): Dictionary mapping technology names to color codes. Expected
             format is {'tech_name': '#RRGGBB'} or {'tech_name': '#RGB'}.
         fill_color (str, optional): Default color to use for invalid entries. Defaults to '#999999'.
-            
+
     Returns:
         dict[str,str] with validated hex color codes. All valid colors are converted
         to lowercase, while invalid colors are replaced with '#999999' (gray).
-        
+
     Example:
         >>> colors = {'solar': '#FFD700', 'wind': 'invalid', 'coal': '#8B4513'}
         >>> validated = validate_hex_colors(colors)
         >>> print(validated)
         {'solar': '#ffd700', 'wind': '#999999', 'coal': '#8b4513'}
-        
+
     Note:
         Accepts both 3-digit (#RGB) and 6-digit (#RRGGBB) hex color formats.
         All valid colors are standardized to lowercase.
