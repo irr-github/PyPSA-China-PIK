@@ -224,8 +224,10 @@ if __name__ == "__main__":
     node_config = snakemake.params.get("node_config", {})
     exclude_provinces = node_config.get("exclude_provinces", [])
 
-    admin_l2_shapes = read_admin2_shapes(snakemake.input.admin_l2_shapes).query(
-        "~NAME_1.isin(@exclude_provinces)"
+    admin_l2_shapes = (
+        read_admin2_shapes(snakemake.input.admin_l2_shapes)
+        .query("~NAME_1.isin(@exclude_provinces)")
+        .reset_index(drop=True)
     )
 
     # Check if clustering is needed
@@ -252,6 +254,8 @@ if __name__ == "__main__":
 
     # Extract clustered network
     nc = clustering.n
+    # rename links (does not work unless links are unique, ie grouped)
+    # nc.links.index = nc.links.bus0 + "-" + nc.links.bus1 + " UHV"
 
     # Save outputs
     clustering.busmap.to_csv(snakemake.output.busmap)
@@ -264,16 +268,17 @@ if __name__ == "__main__":
     clustered_onshore.to_file(snakemake.output.regions_onshore)
 
     regions_offshore = gpd.read_file(snakemake.input.offshore_shapes)
-    # merge with busmap index -> TODO move into aggregate_regions
+    # common index with regions_onshore and cluster map
     regions_offshore = regions_offshore.merge(
         admin_l2_shapes.reset_index()[["NAME_1", "NAME_2", "index"]],
         on=["NAME_1", "NAME_2"],
         how="left",
         suffixes=("", "full"),
-    )
-    regions_offshore.index = regions_offshore["index"].astype(int).astype(str)
+    ).set_index("index")
+    busmap_offshore = clustering.busmap.reset_index(drop=True).loc[regions_offshore.index]
+
     clustered_offshore = aggregate_regions(
-        clustering.busmap.loc[regions_offshore.index],
+        busmap_offshore,
         regions_offshore,
     )
     clustered_offshore.to_file(snakemake.output.regions_offshore)
