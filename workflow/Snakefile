@@ -167,25 +167,7 @@ rule base_network:
     script:
         "scripts/base_network_l2.py"
 
-# rule build_clustered_population_layouts:
-#     input:
-#         pop_layout_total=resources("pop_layout_total.nc"),
-#         pop_layout_urban=resources("pop_layout_urban.nc"),
-#         pop_layout_rural=resources("pop_layout_rural.nc"),
-#         regions(data"regions_onshore_base_s_{clusters}.geojson"),
-#         cutout=lambda w: input_cutout(w),
-#     output:
-#         clustered_pop_layout=resources("pop_layout_base_s_{clusters}.csv"),
-#     log:
-#         logs("build_clustered_population_layouts_s_{clusters}.log"),
-#     resources:
-#         mem_mb=10000,
-#     benchmark:
-#         benchmarks("build_clustered_population_layouts/s_{clusters}")
-#     conda:
-#         "../envs/environment.yaml"
-#     script:
-#         "../scripts/build_clustered_population_layouts.py"
+
 
 
 rule build_electricity_demand:
@@ -376,7 +358,6 @@ rule build_renewable_profiles:
 rule build_load_profiles:
     params:
         config = config,
-        elec_load_conversion = config["paths"]["yearly_regional_load"]["ac_to_mwh"]
     input:
         population = DERIVED_COMMON + "/population/population.h5",
         population_map = DERIVED_COMMON + "/population/population_gridcell_map.h5",
@@ -384,12 +365,8 @@ rule build_load_profiles:
         intraday_profiles="resources/data/heating/heat_load_profile_DK_AdamJensen.csv",
         space_heat_demand="resources/data/heating/SPH_2020.csv",
         hot_water_demand="resources/data/heating/IEA_energysectorroadmaptocarbonneutralityinchina_fig325.csv",
-        elec_load_projs = path_manager.elec_load(),
         province_codes = "resources/data/regions/province_codes.csv",
-        hrly_regional_ac_load = "resources/data/load/Hourly_demand_of_31_province_China_modified_V2.1.csv",
     output:
-        # TODO consider splitting into two rules so elect+hrly can be used DERIVED COMMON
-        elec_load_hrly = DERIVED_DATA + "/load/regio_hrly_ac_load_{planning_horizons}.h5",
         heat_demand_profile = DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
         energy_totals_name = DERIVED_DATA + "/" +f"energy_totals_{CUTOUT_NAME}_"+"{planning_horizons}.h5"
     log: LOG_DIR + "/build_load_profiles/build_{planning_horizons}"+f"_{CUTOUT_NAME}.log"
@@ -402,8 +379,7 @@ rule build_biomass_potential:
     input:
         # from doi.org/10.1038/s41467-021-23282-x
         biomass_feedstocks = "resources/data/p_nom/41467_2021_23282_MOESM4_ESM.xlsx"
-    log:
-        LOGS_COMMON + "/build_biomass_potential.log"
+    log: LOGS_COMMON + "/build_biomass_potential.log"
     output:
         biomass_potential=DERIVED_COMMON+"/"+"p_nom/biomass_potential.h5"
     threads: ATLITE_NPROCESSES
