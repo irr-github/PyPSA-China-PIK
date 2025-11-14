@@ -500,7 +500,7 @@ def add_H2(network: pypsa.Network, config: dict, costs: pd.DataFrame, planning_y
         capital_cost=costs.at["hydrogen storage tank type 1 including compressor", "capital_cost"],
         lifetime=costs.at["hydrogen storage tank type 1 including compressor", "lifetime"],
     )
-    if config["add_methanation"]:
+    if config["add_methanation"] and config["add_gas"]:
         cost_year = planning_year
         network.add(
             "Link",
@@ -521,6 +521,8 @@ def add_H2(network: pypsa.Network, config: dict, costs: pd.DataFrame, planning_y
             * costs.at["gas", "co2_emissions"]
             * costs.at["methanation", "efficiency"],
         )
+    elif config["add_methanation"] and not config["add_gas"]:
+        logger.warning("Methanation not added because gas infrastructure is disabled")
 
     if config["Techs"]["hydrogen_lines"]:
         edge_path = config["edge_paths"].get(config["scenario"]["topology"], None)
@@ -1530,22 +1532,21 @@ def add_hydro(
 
         # p_nom*p_pu = XXX m^3 then use turbines efficiency to convert to power
 
-    return
-
     # ======= add other existing hydro power (no basin cascades) ===
     # 1. Subtract cascades from GEM
 
     # 2. Work out basins and inflow
 
     # 3. Add remaining hydro
-
-    hydro_p_nom = pd.read_hdf(config["hydro_dams"]["p_nom_path"]).loc[nodes]
+    nodes_prov = network.buses.province.unique()
+    nodes_prov = [node for node in nodes_prov if node in network.buses.index]
+    hydro_p_nom = pd.read_hdf(config["hydro_dams"]["p_nom_path"]).loc[nodes_prov]
     hydro_p_max_pu = (
         pd.read_hdf(
             config["hydro_dams"]["p_max_pu_path"],
             key=config["hydro_dams"]["p_max_pu_key"],
         ).tz_localize(None)
-    )[nodes]
+    )[nodes_prov]
 
     hydro_p_max_pu = shift_profile_to_planning_year(hydro_p_max_pu, planning_horizons)
     # sort buses (columns) otherwise stuff will break
@@ -1558,9 +1559,9 @@ def add_hydro(
 
     network.add(
         "Generator",
-        nodes,
+        nodes_prov,
         suffix=" hydroelectricity",
-        bus=nodes,
+        bus=nodes_prov,
         carrier="hydroelectricity",
         p_nom=hydro_p_nom,
         p_nom_min=hydro_p_nom,
@@ -1834,8 +1835,9 @@ if __name__ == "__main__":
             topology="current+FCG",
             co2_pathway="exp175default",
             # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
-            planning_horizons=2025,
+            planning_horizons=2060,
             heating_demand="positive",
+            cluster_id="IM2XJ4",
             # configfiles="resources/tmp/pseudo-coupled.yaml",
         )
 
@@ -1860,7 +1862,13 @@ if __name__ == "__main__":
     network.name = f"China {pathway} {yr}  {config['scenario']}"
 
     # load costs
-    n_years = snapshots_config["frequency"] * len(network.snapshots) / 8760.0
+    # WARNING: assumes hourly res in base network & no leap years
+    # frequency is applied later. Base network is at one hour
+    n_years = len(network.snapshots) / 8760.0
+    if int(n_years) != n_years:
+        logger.warning(
+            f"Network has non-integer number of years {n_years}. Is this expected? consider leap years."
+        )
     tech_costs = snakemake.input["tech_costs"]
     input_paths = {k: v for k, v in snakemake.input.items()}
     cost_year = yr

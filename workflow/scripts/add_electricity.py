@@ -298,6 +298,7 @@ if "snakemake" not in globals():
         # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
         planning_horizons=2025,
         heating_demand="positive",
+        cluster_id="IM2XJ4",
         # configfiles="resources/tmp/pseudo-coupled.yaml",
     )
 

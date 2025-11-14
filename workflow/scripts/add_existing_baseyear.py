@@ -60,8 +60,9 @@ def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series)
         as possible following the grade priority.
     """
 
-    availability = cap_by_year.sort_index(ascending=False)
-    to_distribute = grade_capacities.fillna(0).sort_index()
+    to_distribute = cap_by_year.sort_index(ascending=False)
+    # best grade first
+    availability = grade_capacities.fillna(0).sort_index(ascending=False)
     n_years = len(to_distribute)
     n_sources = len(availability)
 
@@ -83,7 +84,7 @@ def distribute_vre_by_grade(cap_by_year: pd.Series, grade_capacities: pd.Series)
         # Subtract what was used from availability
         remaining -= allocation[:, j]
 
-    return pd.DataFrame(data=allocation, columns=grade_capacities.index, index=availability.index)
+    return pd.DataFrame(data=allocation, index=availability.index, columns=to_distribute.index)
 
 
 def add_base_year(n: pypsa.Network, plan_year: int):
@@ -152,14 +153,18 @@ def calc_existing_vre_capacities(
         df.columns = df.columns.astype(int)
 
         # fetch existing vre generators (n grade bins per node)
-        gen_i = n.generators.query("carrier == @carrier").index
-        carrier_gens = n.generators.loc[gen_i]
+        carrier_gens = n.generators.query("carrier == @carrier").
         res_capacities = []
         # for each bus, distribute the vre capacities by grade potential - best first
         for bus, group in carrier_gens.groupby("bus"):
             if bus not in df.index:
                 continue
-            res_capacities.append(distribute_vre_by_grade(group.p_nom_max, df.loc[bus]))
+            res_capacities.append(
+                distribute_vre_by_grade(
+                    df.loc[bus],
+                    group.p_nom_max,
+                )
+            )
 
         if res_capacities:
             res_capacities = pd.concat(res_capacities, axis=0)
@@ -751,7 +756,8 @@ if __name__ == "__main__":
             "add_existing_baseyear",
             topology="current+FCG",
             co2_pathway="exp175default",
-            planning_horizons="2025",
+            planning_horizons="2050",
+            cluster_id="IM2XJ4",
             # configfiles="resources/tmp/pseudo_coupled.yml",
             heating_demand="positive",
         )
@@ -794,9 +800,29 @@ if __name__ == "__main__":
     ):
         existing_capacities = existing_capacities.query("remind_year == @plan_year")
 
+    network_carriers = (
+        n.generators.carrier.unique().tolist()
+        + n.links.carrier.unique().tolist()
+        + n.stores.carrier.unique().tolist()
+        + n.storage_units.carrier.unique().tolist()
+    )
+    not_in_network = existing_capacities.query(
+        "Fueltype not in @network_carriers and Tech not in @network_carriers"
+    )
+    if not not_in_network.empty:
+        existing_capacities.drop(not_in_network.index, inplace=True)
+        drop = not_in_network.Fueltype.unique().tolist() + not_in_network.Tech.unique().tolist()
+        logger.warning(f"The following fuel types and technologies are not in the network: {drop}")
+
     vre_caps = existing_capacities.query("Tech in @vre_techs | Fueltype in @vre_techs")
+    missing_buses = n.buses.query("carrier=='AC'").index.difference(vre_caps.cluster.unique())
+    if not missing_buses.empty:
+        logger.warning(
+            f"The following buses have no existing VRE capacities assigned: {missing_buses.tolist()}"
+        )
     # vre_caps.loc[:, "Country"] = coco.CountryConverter().convert(["China"], to="iso2")
     vres = calc_existing_vre_capacities(n, costs, vre_caps, config)
+
     # TODO: fix bug, installed has less vre/wind cap than vres.
     installed = pd.concat(
         [existing_capacities.query("Tech not in @vre_techs & Fueltype not in @vre_techs"), vres],

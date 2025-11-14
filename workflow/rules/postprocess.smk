@@ -19,7 +19,6 @@ STATISTICS_BARPLOTS = [
     "mv_minus_lcoe",
 ]
 
-
 if config["foresight"] in ["None", "overnight", "non-pathway", "myopic"]:
 
     rule plot_network:

@@ -13,7 +13,7 @@ import atlite
 import numpy as np
 import pandas as pd
 import scipy as sp
-from _helpers import configure_logging, get_cutout_params, mock_snakemake
+from _helpers import configure_logging, mock_snakemake
 from _pypsa_helpers import (
     calc_atlite_heating_timeshift,
     make_periodic_snapshots,
@@ -369,18 +369,6 @@ if __name__ == "__main__":
         tz=None,
         end_year=(None if not snapshots_config["end_year_plus1"] else planning_horizons + 1),
     )
-
-    # project the electric load based on the demand
-    conversion = snakemake.params.elec_load_conversion  # to MWHr
-    hrly_MWh_load = prepare_hourly_load_data(
-        snakemake.input.hrly_regional_ac_load, snakemake.input.province_codes
-    )
-
-    yearly_projs = read_yearly_load_projections(snakemake.input.elec_load_projs, conversion)
-    projected_demand = project_elec_demand(hrly_MWh_load, yearly_projs, planning_horizons)
-
-    with pd.HDFStore(snakemake.output.elec_load_hrly, mode="w", complevel=4) as store:
-        store["load"] = projected_demand
 
     if config.get("heat_coupling", False):
 

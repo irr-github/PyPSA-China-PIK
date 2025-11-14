@@ -8,7 +8,6 @@ Determine rural population cells based on provincial urban fractions.
 Aggregate back to cutout resolution
 """
 import logging
-from venv import logger
 
 import geopandas as gpd
 import numpy as np
@@ -27,7 +26,9 @@ from affine import Affine
 logger = logging.getLogger(__name__)
 
 
-def compute_shape_indicators_fast(data: xr.DataArray, shapes_gdf: gpd.GeoDataFrame, data_crs: str | None = None) -> xr.DataArray:
+def compute_shape_indicators_fast(
+    data: xr.DataArray, shapes_gdf: gpd.GeoDataFrame, data_crs: str | None = None
+) -> xr.DataArray:
     """Convert polygons to raster masks. This is a sparse matrix mapping shape to pixel.
     The indicator is binary with no area fraction.
 
@@ -44,24 +45,26 @@ def compute_shape_indicators_fast(data: xr.DataArray, shapes_gdf: gpd.GeoDataFra
     """
 
     # Handle CRS - check if ds has crs attribute, otherwise use provided ds_crs
-    if hasattr(data, 'crs') and data.crs is not None:
+    if hasattr(data, "crs") and data.crs is not None:
         data_crs = data.crs
     elif data_crs is not None:
         data_crs = data_crs
     else:
         # Default to WGS84 if no CRS provided
-        data_crs = 'EPSG:4326'
+        data_crs = "EPSG:4326"
         logger.warning(f"Warning: No CRS found for dataset, assuming {data_crs}")
-    
+
     # Get grid parameters
     height, width = data.shape
     x_coords = data.coords["x"].values
     y_coords = data.coords["y"].values
-    
+
     # Map coordinates into pixel space
     x_res = (x_coords.max() - x_coords.min()) / (len(x_coords) - 1)
     y_res = (y_coords.max() - y_coords.min()) / (len(y_coords) - 1)
-    transform = Affine.translation(x_coords.min() - x_res/2, y_coords.max() + y_res/2) * Affine.scale(x_res, -y_res)
+    transform = Affine.translation(
+        x_coords.min() - x_res / 2, y_coords.max() + y_res / 2
+    ) * Affine.scale(x_res, -y_res)
 
     # Ensure shapes_gdf is in the same CRS as the data
     if str(shapes_gdf.crs) != str(data_crs):
@@ -81,11 +84,7 @@ def compute_shape_indicators_fast(data: xr.DataArray, shapes_gdf: gpd.GeoDataFra
     for shp_idx, (_, shp_geom) in enumerate(shapes_gdf_proj.geometry.items()):
         # Rasterize directly into the output column
         province_mask = features.rasterize(
-            [(shp_geom, 1)],
-            out_shape=(height, width),
-            transform=transform,
-            fill=0,
-            dtype=np.uint8
+            [(shp_geom, 1)], out_shape=(height, width), transform=transform, fill=0, dtype=np.uint8
         )
         indicator_matrix[:, shp_idx] = province_mask.ravel()
 
@@ -129,7 +128,7 @@ def assign_cells_to_shape_fast(
         data_ = data
     else:
         raise ValueError("Data array must be 2D or 3D with band dimension.")
-    
+
     n_pixels = indicator_matrix.shape[0]
     n_shapes = indicator_matrix.shape[1]
 
@@ -147,7 +146,7 @@ def assign_cells_to_shape_fast(
 
     # Reshape to match data shape
     pixel_shp_id = cell_assignment.reshape(data_.shape)
-    
+
     # Create assignment band with same coordinates
     assignment_band = xr.DataArray(
         pixel_shp_id[np.newaxis, :, :],  # Add band dimension
@@ -159,23 +158,21 @@ def assign_cells_to_shape_fast(
         dims=["band", "y", "x"],
     )
 
-    data_with_assignment = xr.concat(
-        [data, assignment_band], dim="band"
-    )
+    data_with_assignment = xr.concat([data, assignment_band], dim="band")
 
     return data_with_assignment
 
 
 def add_shape_id(data: xr.DataArray, shape: gpd.GeoDataFrame, new_band_name: str):
     """Add a new band to the data array with shape IDs.
-    
+
     Args:
         data (xr.DataArray): The input data array.
         shape (gpd.GeoDataFrame): The GeoDataFrame containing shape geometries (e.g. provinces).
         new_band_name (str): Name of the new band to add.
     Returns:
         xr.DataArray: Data array with new shape ID band added."""
-    
+
     I_mat = compute_shape_indicators_fast(data.sel(band=data["band"][0]), shape)
     logger.info("Assigning shape IDs using indicator matrix..")
     data_with_assignment = assign_cells_to_shape_fast(data, I_mat, band_name=new_band_name)
@@ -184,34 +181,36 @@ def add_shape_id(data: xr.DataArray, shape: gpd.GeoDataFrame, new_band_name: str
 
 def calculate_cell_areas(data: xr.DataArray) -> np.ndarray:
     """Calculate area of each grid cell in km^2 for lat/lon grid.
-    
+
     Args:
         data (xr.DataArray): Data with x (longitude) and y (latitude) coordinates.
-    
+
     Returns:
         np.ndarray: Flattened array of cell areas in km^2.
     """
     # Get coordinates
     x_coords = data.coords["x"].values
     y_coords = data.coords["y"].values
-    
+
     # Calculate resolution
     x_res = (x_coords.max() - x_coords.min()) / (len(x_coords) - 1)
     y_res = (y_coords.max() - y_coords.min()) / (len(y_coords) - 1)
-    
+
     # Create meshgrid for lat/lon
     lon_grid, lat_grid = np.meshgrid(x_coords, y_coords)
-    
+
     # Calculate area using spherical Earth approximation
     # Area = (lat_spacing * R) * (lon_spacing * R * cos(lat))
     R_earth = 6371.0  # km
     lat_rad = np.deg2rad(lat_grid)
     cell_area_km2 = (np.deg2rad(y_res) * R_earth) * (np.deg2rad(x_res) * R_earth * np.cos(lat_rad))
-    
+
     return cell_area_km2.ravel()
 
 
-def scale_prov_totals_and_find_rural(assigned_data: xr.DataArray, prov_data: pd.DataFrame | gpd.GeoDataFrame) -> tuple[xr.DataArray, pd.DataFrame]:
+def scale_prov_totals_and_find_rural(
+    assigned_data: xr.DataArray, prov_data: pd.DataFrame | gpd.GeoDataFrame
+) -> tuple[xr.DataArray, pd.DataFrame]:
     """Rescale population values to match expected provincial totals and identify rural cells.
 
     1. For each province, calculate the scaling factor to match the expected province population.
@@ -224,37 +223,37 @@ def scale_prov_totals_and_find_rural(assigned_data: xr.DataArray, prov_data: pd.
         prov_data (pd.DataFrame | gpd.GeoDataFrame): Expected population per province (e.g. indexed 0-30).
 
     Returns:
-        tuple[xr.DataArray, pd.DataFrame]: 
+        tuple[xr.DataArray, pd.DataFrame]:
             - DataArray with population band rescaled and rural band added
             - DataFrame with cut-off statistics per province
     """
     # Get the bands
     pop_data = assigned_data.sel(band="population")
     prov_idx = assigned_data.sel(band="prov_index")
-    
+
     # Create flat arrays for fast computation
     pop_flat = pop_data.values.ravel()
     prov_flat = prov_idx.values.ravel()
-    
+
     # Calculate cell areas once
     cell_area_flat = calculate_cell_areas(assigned_data)
-    
+
     # Initialize rural bool and tracking arrays
     is_rural = np.zeros_like(pop_flat, dtype=bool)
     cut_off_stats = []
     scaling_factors = np.zeros(len(prov_data))
-    
+
     # Process each province
     for i, prov in enumerate(prov_data.index):
         mask = prov_flat == i
         raster_total = pop_flat[mask].sum()
-        
+
         # Calculate scaling factor
         if raster_total > 0:
             scaling_factors[i] = prov_data.iloc[i].population / raster_total
         else:
             scaling_factors[i] = 0.0
-        
+
         # Get province-specific values and sort by population
         prov_pop_vals = pop_flat[mask]
         prov_areas = cell_area_flat[mask]
@@ -267,8 +266,8 @@ def scale_prov_totals_and_find_rural(assigned_data: xr.DataArray, prov_data: pd.
         cut_off_idx = (sorted_pop.cumsum() < pop_rural).sum()
 
         # Mark rural cells
-        is_rural[mask] = (prov_pop_vals <= sorted_pop[cut_off_idx-1])
-        
+        is_rural[mask] = prov_pop_vals <= sorted_pop[cut_off_idx - 1]
+
         # Get cut-off cell statistics
         if cut_off_idx < len(sorted_pop):
             cut_off_pop = sorted_pop[cut_off_idx]
@@ -278,17 +277,21 @@ def scale_prov_totals_and_find_rural(assigned_data: xr.DataArray, prov_data: pd.
             cut_off_pop = 0.0
             cut_off_area = 0.0
             cut_off_density = 0.0
-        
-        cut_off_stats.append({
-            'province': prov,
-            'cut_off_idx': cut_off_idx,
-            'cut_off_population': cut_off_pop,
-            'cut_off_area_km2': cut_off_area,
-            'cut_off_density_per_km2': cut_off_density,
-            'n_cells_province': mask.sum(),
-            'n_cells_rural': is_rural[mask].sum(),
-            'rural_fraction_cells': is_rural[mask].sum() / mask.sum() if mask.sum() > 0 else 0.0
-        })
+
+        cut_off_stats.append(
+            {
+                "province": prov,
+                "cut_off_idx": cut_off_idx,
+                "cut_off_population": cut_off_pop,
+                "cut_off_area_km2": cut_off_area,
+                "cut_off_density_per_km2": cut_off_density,
+                "n_cells_province": mask.sum(),
+                "n_cells_rural": is_rural[mask].sum(),
+                "rural_fraction_cells": (
+                    is_rural[mask].sum() / mask.sum() if mask.sum() > 0 else 0.0
+                ),
+            }
+        )
 
     # Convert to DataFrame
     cut_off_df = pd.DataFrame(cut_off_stats)
@@ -299,52 +302,48 @@ def scale_prov_totals_and_find_rural(assigned_data: xr.DataArray, prov_data: pd.
     pop_rescaled = pop_rescaled_flat.reshape(pop_data.shape)
 
     # Create new DataArray with rescaled population
-    pop_rescaled_da = xr.DataArray(
-        pop_rescaled,
-        coords=pop_data.coords,
-        dims=pop_data.dims
-    )
+    pop_rescaled_da = xr.DataArray(pop_rescaled, coords=pop_data.coords, dims=pop_data.dims)
     # Create rural layer
-    rural = xr.DataArray(
-        is_rural.reshape(pop_data.shape),
-        coords=pop_data.coords,
-        dims=pop_data.dims
-    ).expand_dims("band").assign_coords(band=["is_rural"])
+    rural = (
+        xr.DataArray(is_rural.reshape(pop_data.shape), coords=pop_data.coords, dims=pop_data.dims)
+        .expand_dims("band")
+        .assign_coords(band=["is_rural"])
+    )
 
     # Replace population band and add rural band
     result = assigned_data.copy()
     result.loc[dict(band="population")] = pop_rescaled_da
 
-    return xr.concat([result, rural], dim='band'), cut_off_df
+    return xr.concat([result, rural], dim="band"), cut_off_df
 
 
 def group_and_sum_by_mask(data: xr.DataArray, value_band: str, group_band: str) -> pd.Series:
     """Efficiently group values by mask and sum using numpy bincount.
-    
+
     This is much faster than xarray groupby for large datasets.
-    
+
     Args:
         data (xr.DataArray): Data with multiple bands.
         value_band (str): Band to sum (e.g., "population").
         group_band (str): Band to group by (e.g., "prov_index").
-    
+
     Returns:
         pd.Series: Summed values per group, indexed by group ID.
     """
     # Extract bands and flatten
     values = data.sel(band=value_band).values.ravel()
     groups = data.sel(band=group_band).values.ravel().astype(int)
-    
+
     # Filter out unassigned cells (group_id == -1)
     valid_mask = groups >= 0
     values_valid = values[valid_mask]
     groups_valid = groups[valid_mask]
-    
+
     # Use bincount for fast aggregation
     # bincount is O(n) and much faster than groupby for this use case
     n_groups = groups_valid.max() + 1
     sums = np.bincount(groups_valid, weights=values_valid, minlength=n_groups)
-    
+
     return pd.Series(sums, index=range(n_groups), name=value_band)
 
 
@@ -353,27 +352,28 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "build_population_layouts",
-
         )
 
     configure_logging(snakemake, logger=logger)
 
     pop_year = snakemake.params.pop_year
 
-
     # provincial shapes and population
     province_shapes = gpd.read_file(snakemake.input.province_shape).set_index("province")
     admin2_shapes = read_admin2_shapes(snakemake.input.admin_l2_shape)
     population_provs = read_generic_province_data(
-        snakemake.input.province_populations, index_col=0, index_name="province")
-    population_provs = population_provs[str(pop_year)]*snakemake.params.pop_conversion
+        snakemake.input.province_populations, index_col=0, index_name="province"
+    )
+    population_provs = population_provs[str(pop_year)] * snakemake.params.pop_conversion
     if not population_provs.sum() > 1e9:
         logger.warning("Low population count, check headcount conversion")
 
-    urban_frac = read_generic_province_data(snakemake.input.urban_percent, index_col=0, index_name="province")
-    urban_frac = urban_frac[str(pop_year)]/100
+    urban_frac = read_generic_province_data(
+        snakemake.input.urban_percent, index_col=0, index_name="province"
+    )
+    urban_frac = urban_frac[str(pop_year)] / 100
 
-     # merge population and geometry
+    # merge population and geometry
     prov_data = gpd.GeoDataFrame(
         {
             "geometry": province_shapes.geometry,
@@ -384,13 +384,17 @@ if __name__ == "__main__":
     )
 
     # raster data population (pop per pixel)
-    high_res_pop = rioxarray.open_rasterio(snakemake.input.population_gridded).assign_coords(band=["population"])
+    high_res_pop = rioxarray.open_rasterio(snakemake.input.population_gridded).assign_coords(
+        band=["population"]
+    )
     # Set missing value to 0
     high_res_pop = high_res_pop.clip(0)
     high_res_pop.attrs["_FillValue"] = 0
     # coarsen as requested
     coarsening_factor = snakemake.params.get("coarsen_pop_by", 3)
-    high_res_pop = high_res_pop.coarsen(x=coarsening_factor, y=coarsening_factor, boundary='trim').sum()
+    high_res_pop = high_res_pop.coarsen(
+        x=coarsening_factor, y=coarsening_factor, boundary="trim"
+    ).sum()
 
     # assign shapes
     processed_raster = add_shape_id(high_res_pop, province_shapes, new_band_name="prov_index")
@@ -399,25 +403,26 @@ if __name__ == "__main__":
 
     logger.info("Aggregating population by admin2 regions...")
     population_by_admin_series = group_and_sum_by_mask(
-        processed_raster, 
-        value_band="population", 
-        group_band="l2_id"
+        processed_raster, value_band="population", group_band="l2_id"
     )
-    
+
     # Merge using position-based indexing (l2_id maps to admin2_shapes position)
-    population_by_admin = pd.DataFrame({
-        "NAME_2": admin2_shapes.iloc[population_by_admin_series.index]["NAME_2"].values,
-        "NAME_1": admin2_shapes.iloc[population_by_admin_series.index]["NAME_1"].values,
-        "population": population_by_admin_series.values
-    }, index=population_by_admin_series.index)
-    
+    population_by_admin = pd.DataFrame(
+        {
+            "NAME_2": admin2_shapes.iloc[population_by_admin_series.index]["NAME_2"].values,
+            "NAME_1": admin2_shapes.iloc[population_by_admin_series.index]["NAME_1"].values,
+            "population": population_by_admin_series.values,
+        },
+        index=population_by_admin_series.index,
+    )
+
     # Validate merge produced no NaN values
     if population_by_admin.isna().any().any():
         raise ValueError(
             f"Merge produced NaN values. Index mismatch between admin2_shapes "
             f"({len(admin2_shapes)}) and population groups ({len(population_by_admin_series)})."
         )
-    
+
     logger.info(f"Merged population data for {len(population_by_admin)} admin2 regions.")
     population_by_admin.to_csv(snakemake.output.admin2_population)
 
