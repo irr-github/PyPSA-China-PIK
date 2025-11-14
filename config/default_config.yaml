@@ -142,6 +142,7 @@ renewable:
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
 renewable_potential_cutoff: 200 # MW, skip low potentials
+export_renewable_potential_raster: false
 
 heat_demand:
   start_day : "01-04" # dd-mm

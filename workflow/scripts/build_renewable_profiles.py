@@ -311,7 +311,31 @@ if __name__ == "__main__":
     logger.info(f"calculated n={len(profiles)} profiles")
     logger.info(f"Calculating maximal capacity per bus for technology {technology}")
     profiles = xr.merge(profiles)
+    # aggregated technical potential (MW) per bus/bin
     p_nom_max = capacity_per_sqkm * availability * class_masks @ area
+
+    # Optional: export technical potential at raster resolution
+    # Controlled by config flag export_raster_potential in renewable tech config
+    export_raster_potential = params.get("export_raster_potential", False)
+    potential_outputs = []
+    # Snakemake sets potential_raster to [] when disabled via Snakefile lambda
+    if "potential_raster" in snakemake.output:
+        # normalise to list
+        val = snakemake.output["potential_raster"]
+        potential_outputs = val if isinstance(val, list) else [val]
+
+    if export_raster_potential and potential_outputs:
+        logger.info(f"Exporting raster-level potential for {technology}.")
+        try:
+            p_nom_cell = (capacity_per_sqkm * availability * class_masks * area).rename(
+                "p_nom_cell"
+            )
+            p_nom_cell.to_netcdf(potential_outputs[0])
+        except Exception as e:
+            logger.error(f"Failed to compute raster potential for {technology}: {e}.")
+            xr.Dataset(attrs={"export_raster_potential": "error"}).to_netcdf(potential_outputs[0])
+    elif not export_raster_potential:
+        logger.info("Raster potential export disabled; output list empty.")
 
     logger.info(f"Calculate average distances for technology {technology}.")
     layoutmatrix = (layout * availability * class_masks).stack(
