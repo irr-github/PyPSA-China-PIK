@@ -36,7 +36,9 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
-        snakemake = mock_snakemake("build_availability_matrix", technology="solar")
+        snakemake = mock_snakemake(
+            "build_availability_matrix", technology="offwind", cluster_id="IM2XJ4"
+        )
 
     configure_logging(snakemake)
 
@@ -47,10 +49,11 @@ if __name__ == "__main__":
     technology = snakemake.wildcards.technology
     params = snakemake.params.vre_config[technology]
 
-    if technology != "offwind":
-        regions = gpd.read_file(snakemake.input.regions_onshore)
-    else:
+    if technology == "offwind":
         regions = gpd.read_file(snakemake.input.regions_offshore)
+        regions.geometry = regions.buffer(0.05)
+    else:
+        regions = gpd.read_file(snakemake.input.regions_onshore)
     regions = regions.set_index("cluster").rename_axis("bus")
     buses = regions.index
 
@@ -87,23 +90,24 @@ if __name__ == "__main__":
     # TODO go straight to the copernicus monitoring instead of using each subraster
     # add gridcodes per resource in the monitoring raster data
     if technology != "offwind":
+  
         excluder.add_raster(snakemake.input["Grass_raster"], invert=True, crs=3035)
         excluder.add_raster(snakemake.input["Bare_raster"], invert=True, crs=3035)
         excluder.add_raster(snakemake.input["Shrubland_raster"], invert=True, crs=3035)
 
-    exclude_built_up = not params.get("allow_built_up", True)
-    excluder.add_raster(snakemake.input["Build_up_raster"], invert=exclude_built_up, crs=3035)
+        exclude_built_up = not params.get("allow_built_up", True)
+        excluder.add_raster(snakemake.input["Build_up_raster"], invert=exclude_built_up, crs=3035)
 
     if params.get("max_depth"):
         func = functools.partial(np.greater, -params["max_depth"])
         # lambda not supported for atlite + multiprocessing
         # use named function np.greater with partially frozen argument instead
         # and exclude areas where: -max_depth > grid cell depth
-        excluder.add_raster(snakemake.input.gebco, codes=func, crs=4326, nodata=-1000)
+        excluder.add_raster(snakemake.input.gebco, codes=func, crs=4326, nodata=0, invert=False)
 
     if params.get("min_depth"):
         func = functools.partial(np.greater, -params["min_depth"])
-        excluder.add_raster(snakemake.input.gebco, codes=func, crs=4326, nodata=-1000, invert=True)
+        excluder.add_raster(snakemake.input.gebco, codes=func, crs=4326, nodata=0, invert=True)
 
     if "min_shore_distance" in params:
         buffer = params["min_shore_distance"]

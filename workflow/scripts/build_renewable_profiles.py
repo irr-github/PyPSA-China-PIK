@@ -206,7 +206,10 @@ def localize_cutout_time(cutout: Cutout, drop_leap=True) -> Cutout:
 if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = mock_snakemake(
-            "build_renewable_profiles", technology="solar", rc_params="n3_min_cf_0.05"
+            "build_renewable_profiles",
+            technology="solar",
+            rc_params="n3_min_cf_0.05",
+            cluster_id="IM2XJ4",
         )
 
     configure_logging(snakemake)
@@ -215,6 +218,9 @@ if __name__ == "__main__":
     noprogress = snakemake.params.noprogress_bar
     technology = snakemake.wildcards.technology
     params = snakemake.params.tech_config
+
+    # Export raster potential if requested in renewable tech config
+    raster_potential_output = snakemake.output.get("potential_raster", [])
 
     resource, models = prepare_resource_config(params, nprocesses, noprogress)
     logger.info(f"Resource config: {resource}")
@@ -311,31 +317,20 @@ if __name__ == "__main__":
     logger.info(f"calculated n={len(profiles)} profiles")
     logger.info(f"Calculating maximal capacity per bus for technology {technology}")
     profiles = xr.merge(profiles)
+
     # aggregated technical potential (MW) per bus/bin
     p_nom_max = capacity_per_sqkm * availability * class_masks @ area
 
-    # Optional: export technical potential at raster resolution
-    # Controlled by config flag export_raster_potential in renewable tech config
-    export_raster_potential = params.get("export_raster_potential", False)
-    potential_outputs = []
-    # Snakemake sets potential_raster to [] when disabled via Snakefile lambda
-    if "potential_raster" in snakemake.output:
-        # normalise to list
-        val = snakemake.output["potential_raster"]
-        potential_outputs = val if isinstance(val, list) else [val]
-
-    if export_raster_potential and potential_outputs:
+    # export if requested
+    if raster_potential_output:
         logger.info(f"Exporting raster-level potential for {technology}.")
         try:
             p_nom_cell = (capacity_per_sqkm * availability * class_masks * area).rename(
                 "p_nom_cell"
             )
-            p_nom_cell.to_netcdf(potential_outputs[0])
+            p_nom_cell.to_netcdf(raster_potential_output)
         except Exception as e:
             logger.error(f"Failed to compute raster potential for {technology}: {e}.")
-            xr.Dataset(attrs={"export_raster_potential": "error"}).to_netcdf(potential_outputs[0])
-    elif not export_raster_potential:
-        logger.info("Raster potential export disabled; output list empty.")
 
     logger.info(f"Calculate average distances for technology {technology}.")
     layoutmatrix = (layout * availability * class_masks).stack(

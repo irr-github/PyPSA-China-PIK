@@ -95,8 +95,8 @@ if config['enable'].get('build_cutout', False):
             config=config
         # TODO fix paths?
         input:
-            regions_onshore="regions_onshore/dataregions/regions_onshore.geojson",
-            regions_offshore="regions_offshore/dataregions/regions_offshore.geojson",
+            regions_onshore="resources/data/regions/regions_onshore.geojson",
+            regions_offshore="resources/data/regions_offshore.geojson",
         output: CUTOUT_PATH,
         log: LOGS_COMMON + f"/build_cutout/{CUTOUT_NAME}.log"
         benchmark: f"benchmarks/build_cutout_{CUTOUT_NAME}"
@@ -336,11 +336,11 @@ rule build_renewable_profiles:
         regions_onshore=DERIVED_COMMON + "/regions/regions_onshore_s_{cluster_id}.geojson",
         cutout=CUTOUT_PATH,
     output:
-        profile=DERIVED_CUTOUT+"/"+"profile_{technology}-{rc_params}_s_{cluster_id}.nc",
+        profile=DERIVED_CUTOUT+"/profile_{technology}-{rc_params}_s_{cluster_id}.nc",
         class_regions=DERIVED_CUTOUT+"/"+"{technology}_regions_by_class_{rc_params}_s_{cluster_id}.geojson",
         average_distance=DERIVED_CUTOUT+"/"+"average_distance_{technology}-{rc_params}_s_{cluster_id}.h5",
-        potential_raster= DERIVED_CUTOUT+"/"+f"potential_raster_{wildcards.technology}-{wildcards.rc_params}_s_{wildcards.cluster_id}.nc"
-            if config.get("export_raster_potential", False) else [],
+        potential_raster= DERIVED_CUTOUT+"/potential_raster_{technology}-{rc_params}_s_{cluster_id}.nc"
+            if config.get("export_renewable_potential_raster", False) else [],
     log:
         LOGS_COMMON +f"/cutout_{CUTOUT_NAME}/" +"build_renewable_profile_{technology}-{rc_params}-{cluster_id}.log",
     threads: config["atlite"].get("nprocesses", 4)
@@ -414,7 +414,6 @@ rsc_params = {key : "_".join([f"{k}{v}" for k, v in resource_class_cfg[key].item
 if config["foresight"] in ["overnight"]:
     
     add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
-    print(add_brownfield)
 
     # TODO switch to pypsa-eur style rule with add_electrictiy, prepare_heat (bundle) and add_heat
     # aim to make this simpler when split heat as rule.
