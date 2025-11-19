@@ -153,7 +153,7 @@ def calc_existing_vre_capacities(
         df.columns = df.columns.astype(int)
 
         # fetch existing vre generators (n grade bins per node)
-        carrier_gens = n.generators.query("carrier == @carrier").
+        carrier_gens = n.generators.query("carrier == @carrier")
         res_capacities = []
         # for each bus, distribute the vre capacities by grade potential - best first
         for bus, group in carrier_gens.groupby("bus"):
