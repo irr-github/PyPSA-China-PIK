@@ -815,7 +815,7 @@ def solve_network(
             **kwargs,
         )
 
-    if status != "ok":
+    if status.lower() not in ["ok", "optimal"]:
         logger.warning(f"Solving status '{status}' with termination condition '{condition}'")
     if "infeasible" in condition:
         raise RuntimeError("Solving status 'infeasible'")
@@ -834,7 +834,7 @@ if __name__ == "__main__":
             # heating_demand="positive",
             # configfiles="resources/tmp/remind_coupled_cg.yaml",
             heating_demand="positive",
-            cluster_id="IM2XJ4",
+            cluster_id="prov",
             # configfiles="resources/tmp/pseudo-coupled.yaml",
         )
     configure_logging(snakemake)

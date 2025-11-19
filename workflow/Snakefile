@@ -215,7 +215,7 @@ rule build_clustered_population:
         regions=DERIVED_COMMON + "/regions/regions_onshore_s_{cluster_id}.geojson",
         cutout=CUTOUT_PATH,
     output:
-        clustered_pop_layout=DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.csv",
+        clustered_pop_layout=DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.h5",
     log:
         LOGS_COMMON + "build_clustered_population/s_{cluster_id}.log",
     script:
@@ -255,14 +255,13 @@ rule add_electricity:
         elec_network=DERIVED_COMMON + "/networks/base_elec_{planning_horizons}_{cluster_id}.nc",
 
 
-# TODO find a way to turn off if heat coupling is off (sector refactor - separate heat coupling)
 rule build_solar_thermal_profiles:
     input:
         cutout=CUTOUT_PATH,
 
-        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.csv"
+        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.h5"
     output:
-        profile_solar_thermal = DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5"
+        profile_solar_thermal = DERIVED_CUTOUT+"/"+f"heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5"
     log: LOGS_COMMON + "/build_solar_thermal_profiles_s_{cluster_id}.log"
     script: "scripts/build_solar_thermal_profiles.py"
 
@@ -271,7 +270,7 @@ rule build_temperature_profiles:
     params:
         nodes = config["nodes"],
     input:
-        population_map=DERIVED_COMMON+"/"+"population/pop_layout_base_s_{cluster_id}.csv",
+        population_map=DERIVED_COMMON+"/"+"population/pop_layout_base_s_{cluster_id}.h5",
         cutout=CUTOUT_PATH,
     output:
         temp= DERIVED_CUTOUT + "/heating/temperature_s_{cluster_id}.h5"
@@ -284,7 +283,7 @@ rule build_cop_profiles:
     params:
         nodes = config["nodes"],
     input:
-        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.csv",
+        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.h5",
         cutout=CUTOUT_PATH,
         temperature=DERIVED_CUTOUT + "/heating/temperature_s_{cluster_id}.h5",
     output:
@@ -359,7 +358,7 @@ rule build_load_profiles:
         heat_demand = config["heat_demand"],
     input:
         population = DERIVED_COMMON + "/population/population.h5",
-        population_map = DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.csv",
+        population_map = DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.h5",
         cutout = CUTOUT_PATH,
         intraday_profiles="resources/data/heating/heat_load_profile_DK_AdamJensen.csv",
         space_heat_demand="resources/data/heating/SPH_2020.csv",
@@ -430,7 +429,7 @@ if config["foresight"] in ["overnight"]:
             busmap=DERIVED_COMMON + "/networks/busmap_s_{cluster_id}.csv",
             heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
-            solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5",
+            solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5" if config["heat_coupling"] else [],
             cop_name=DERIVED_CUTOUT+"/heating/hp_cop.h5",
             base_elec_load=DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
             # TODO rename path_manager.elec_load() to indicate projection
