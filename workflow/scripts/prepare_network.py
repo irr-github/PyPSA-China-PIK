@@ -25,6 +25,7 @@ from _pypsa_helpers import (
     assign_locations,
     shift_profile_to_planning_year,
     calc_link_length,
+    simplify_lines,
 )
 from readers import load_costs
 from add_electricity import sanitize_carriers, attach_load
@@ -39,6 +40,7 @@ from constants import (
 )
 from functions import haversine
 from shapely.geometry import Point
+
 
 logger = logging.getLogger(__name__)
 
@@ -638,7 +640,7 @@ def normalize_bidirectional_edges(edges: pd.DataFrame) -> pd.DataFrame:
 
 
 # TODO find permanent solution using wider grid data
-def add_extra_hv_links(network: pypsa.Network, config: dict) -> pd.DataFrame:
+def make_extra_hv_links(network: pypsa.Network, config: dict) -> pd.DataFrame:
     """Build dataframe of missing links that need to be added for network solvability.
 
     This includes:
@@ -656,6 +658,7 @@ def add_extra_hv_links(network: pypsa.Network, config: dict) -> pd.DataFrame:
     hv_links = network.links.query("carrier in ['DC', 'AC']")
     existing_pairs = hv_links["bus0"] + "-" + hv_links["bus1"]
 
+    # TODO just add?
     # Load topology edges from config
     edge_p = config["edge_paths"].get(config["scenario"]["topology"], None)
     if edge_p:
@@ -693,44 +696,35 @@ def add_extra_hv_links(network: pypsa.Network, config: dict) -> pd.DataFrame:
                 # Only add if not already in existing links
                 if pair not in existing_pairs.values:
                     edges_list.append({"bus0": bus0, "bus1": bus1, "p_nom": 0})
+    intra_provincial_edges = pd.DataFrame(edges_list)
 
     # Combine topology edges with intra-provincial edges
-    intra_provincial_edges = pd.DataFrame(edges_list)
-    missing_links = pd.concat([intra_provincial_edges, edges_new], ignore_index=True)
-    missing_links["carrier"] = "AC"
+    extra_links = pd.concat([intra_provincial_edges, edges_new], ignore_index=True)
+    
+    security_config = config.get("security", {"line_security_margin": 70})
+    line_margin = security_config.get("line_security_margin", 70) / 100
     defaults = {
         "build_year": 1,
         "type": "NA",
-        "active": True,
         "efficiency": 1,
         "lifetime": np.inf,
         "p_min_pu": "0",
-        "p_max_pu": 1,
-        "p_set": 0,
+        "p_max_pu": line_margin,
         "p_nom_extendable": True,
-        "marginal_cost": 0,
-        "min_up_time": 0,
-        "min_down_time": 0,
-        "p_nom_opt": 0,
-        "p_nom_mod": 0,
-        "p_nom_min": 0,
         "p_nom_max": np.inf,
-        "down_time_before": 0,
-        "up_time_before": 1,
-        "ramp_limit_start_up": 1,
-        "ramp_limit_shut_down": 1,
-        "shut_down_cost": 0,
-        "start_up_cost": 0,
-        "terrain_factor": 1,
-        "committable": False,
-        "stand_by_cost": 0,
-        "marginal_cost_quadratic": 0,
-        "capital_cost": 0,
         "terrain_factor": 1,
     }
     for col, val in defaults.items():
-        missing_links[col] = val
-    return missing_links
+        extra_links[col] = val
+
+    extra_links["length"] = (
+        extra_links.apply(lambda row: calc_link_length(row, network), axis=1)
+        * config["lines"]["line_length_factor"]
+    )
+    extra_links["capital_cost"] = extra_links["length"] * costs.at["HVDC overhead", "capital_cost"] * FOM_LINES
+    extra_links["carrier"] = "AC"
+    extra_links.index = extra_links["bus0"] + "-" + extra_links["bus1"] + " HV"
+    return simplify_lines(extra_links)
 
 
 def add_voltage_links(network: pypsa.Network, config: dict, costs: pd.DataFrame):
@@ -750,65 +744,44 @@ def add_voltage_links(network: pypsa.Network, config: dict, costs: pd.DataFrame)
     """
 
     hv_links = network.links.query("carrier in ['DC', 'AC']")
-    # remove original HV links:
-    network.remove("Link", hv_links.index.astype(str))
-    if not network.links.empty:
-        logger.warning(
-            "ADD VOLTAGE LINKS WAS NOT CALLED AHEAD OF LINK DECLARATIONS - THIS CAN CAUSE ISSUES"
-        )
-
-    # Add missing links for network solvability
-    extra_hv_links = add_extra_hv_links(network, config)
-    hv_links = pd.concat([hv_links, extra_hv_links]).reset_index(drop=True)
-    # fill any missing lengths
     lengths = (
         hv_links.apply(lambda row: calc_link_length(row, network), axis=1)
         * config["lines"]["line_length_factor"]
     )
     missing_lengths = hv_links[(hv_links.length == 0) | (hv_links.length.isna())]
     hv_links.loc[missing_lengths.index, "length"] = lengths.loc[missing_lengths.index]
+    # TODO use the investment cost saved under capital cost to calc the capital cost based on actual line data
+    hv_links["capital_cost"] = hv_links.length * costs.at["HVDC overhead", "capital_cost"] * FOM_LINES + costs.at["HVDC inverter pair", "capital_cost"]
+    network.links.update(hv_links)
 
-    security_config = config.get("security", {"line_security_margin": 70})
-    line_margin = security_config.get("line_security_margin", 70) / 100
+    # Add missing links for network solvability
+    extra_hv_links = make_extra_hv_links(network, config)
+    network.add("Link", extra_hv_links.index, **extra_hv_links)
 
-    represented_hours = network.snapshot_weightings.sum()[0]
-    n_years = represented_hours / 8760.0
-    line_cost = hv_links.length * costs.at["HVDC overhead", "capital_cost"] * FOM_LINES * n_years
-    missing_costs = hv_links[hv_links.capital_cost == 0 | hv_links.capital_cost.isna()]
-    hv_links.loc[missing_costs.index, "capital_cost"] = line_cost.loc[missing_costs.index]
-    hv_links["capital_cost"] += costs.at["HVDC inverter pair", "capital_cost"]  # /MW
-
-    # AVOID degeneracies by grouping (questionnable... collapse all as DC)
-    sum_columns = ["type", "p_nom"]
-    avg_columns = ["length"]
-    other_columns = hv_links.columns.difference(sum_columns + avg_columns + ["bus0", "bus1"])
-
-    network_links = hv_links.groupby(["bus0", "bus1"])[sum_columns].sum()
-    network_links[avg_columns] = hv_links.groupby(["bus0", "bus1"])[avg_columns].mean()
-    network_links[other_columns] = hv_links.groupby(["bus0", "bus1"])[other_columns].first()
-    network_links = network_links.reset_index()
-    network_links.index = network_links["bus0"] + "-" + network_links["bus1"] + " UHV"
-
-    network_links["p_max_pu"] = line_margin
-    network_links["p_nom_min"] = network_links["p_nom"]
-
-    # ==== lossy transport model (split into 2) ====
-    # NB this only works if there is an equalising constraint, which is hidden in solve_ntwk
+    # # ==== lossy transport model (split into 2) ====
+    # # NB this only works if there is an equalising constraint, which is hidden in solve_ntwk
+    link_mask = network.links.query("carrier in ['DC', 'AC']").index
+    # sanity check
+    if not len(network.links.groupby(["bus0", "bus1"]).p_nom_opt.sum()) == len(link_mask):
+        raise ValueError("Duplicate links detected between bus pairs, please normalize edges")
+    
     if config["line_losses"]:
+        lossy_links = network.links.loc[link_mask].copy()
         eta_stat = config["transmission_efficiency"]["DC"]["efficiency_static"]
-        network_links["efficiency"] = eta_stat * config["transmission_efficiency"]["DC"][
+        lossy_links["efficiency"] = eta_stat * config["transmission_efficiency"]["DC"][
             "efficiency_per_1000km"
-        ] ** (network_links.length / 1000)
-        network_links["p_min_pu"] = 0
-        network.add("Link", network_links.index, suffix=" positive", **network_links)
-        # 0 len for reversed in case line limits are specified in km.
+        ] ** (lossy_links.length / 1000)
+        lossy_links["p_min_pu"] = 0
+        network.links.loc[link_mask] = lossy_links
+        rename_map = dict(zip(link_mask, link_mask+" positive"))
+        network.links.rename(index=rename_map, inplace=True)
+        # ADD reversed 0 len for reversed in case line limits are specified in km.
         # Limited in constraints to fwdcap
-        network_links["length"] = 0
-        network_links["capital_cost"] = 0
-        network.add("Link", network_links.index, suffix=" reversed", **network_links)
+        lossy_links["length"] = 0
+        lossy_links["capital_cost"] = 0
+        network.add("Link", lossy_links.index, suffix=" reversed", **lossy_links)
     else:
-        network_links["p_min_pu"] = -network_links["p_max_pu"]
-        network.add("Link", network_links.index, **network_links)
+        network.links.loc[link_mask, "p_min_pu"] = -1*network.links.loc[link_mask, "p_max_pu"]
 
 
 def add_wind_and_solar(

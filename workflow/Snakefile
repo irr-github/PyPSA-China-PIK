@@ -152,7 +152,7 @@ rule base_network:
     is that each admin l2 population center has a substation
     FOR NOW take the admin2 centroid as bus location -> could switch to highest density point"""
     params:
-        refyear=2018, # temp for snapshots
+        ref_year=2018, # temp for snapshots
         snapshots=config["snapshots"],
         drop_leap_day=True, # False will raise NotImplemented error
         lines_path="resources/data/grids/gem_uhv_with_admin2.csv",

@@ -16,6 +16,8 @@ PLOT_CO2_LABEL = "Mt CO2"
 COST_UNIT = 1
 
 CURRENCY = "Eur"  # 2015
+COST_YEAR = 2015
+YUAN_TO_EUR = 0.14 # average 2015
 
 # ==== data inputs ====
 # TODO move to config
@@ -206,3 +208,21 @@ NICE_NAMES_DEFAULT = {
 # tests
 TESTS_RUNNAME = "automated_test_run"
 TESTS_CUTOUT = "China-tests-cutout"
+
+# world bank data
+CHINA_INFLATION = {
+    2011: 5.55,
+    2012: 2.62,
+    2013: 2.62,
+    2014: 1.92,
+    2015: 1.44,
+    2016: 2.00,
+    2017: 1.59,
+    2018: 2.07,
+    2019: 2.90,
+    2020: 2.42,
+    2021: 0.98,
+    2022: 1.97,
+    2023: 0.23,
+    2024: 0.22
+}

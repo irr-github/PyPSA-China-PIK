@@ -13,6 +13,43 @@ import pyproj
 from pyproj import transform
 from scipy import interpolate
 from shapely.geometry import Polygon
+from constants import COST_YEAR
+
+
+def apply_inflation_correction(year, inflation_data:pd.DataFrame, cost_year=COST_YEAR) -> float:
+    """Apply inflation correction to costs from data year to cost_year
+    
+    Converts costs from a given year to the reference cost_year by applying
+    cumulative inflation. To convert from future to past (deflate), the function
+    divides by the cumulative inflation factor.
+
+    Args:
+        year (int): the year of the data to be converted
+        inflation_data (pd.DataFrame): the inflation data with 'yr_val' column (e.g. 1.05) and year index
+        cost_year (int): the target cost year (reference year)
+    returns:
+        float: the inflation correction factor to multiply costs by
+    
+    Example:
+        >>> inflation_data = pd.DataFrame({
+        ...     'yr_val': [1.05, 1.03, 1.02, 1.04]
+        ... }, index=[2015, 2016, 2017, 2018])
+        >>> apply_inflation_correction(2018, inflation_data, cost_year=2015)
+        0.8734  # Divide 2018 costs by this to get 2015 costs
+    """
+    if "yr_val" not in inflation_data.columns:
+        raise ValueError("inflation_data must have 'yr_val' column")
+    
+    if year < cost_year:
+        # Data from past, inflate to cost_year
+        infl = inflation_data.query("@year < index <= @cost_year")["yr_val"].cumprod()
+        return infl.iloc[-1] if len(infl) > 0 else 1.0
+    elif year == cost_year:
+        return 1.0
+    else:
+        # Data from future, deflate to cost_year
+        infl = inflation_data.query("@cost_year < index <= @year")["yr_val"].cumprod()
+        return 1.0 / infl.iloc[-1] if len(infl) > 0 else 1.0
 
 
 def calculate_annuity(lifetime: int, discount_rate: float) -> float:

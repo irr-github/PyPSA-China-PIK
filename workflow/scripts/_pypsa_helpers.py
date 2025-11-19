@@ -518,6 +518,30 @@ def update_p_nom_max(n: pypsa.Network) -> None:
     n.generators.p_nom_max = n.generators[["p_nom_min", "p_nom_max"]].max(1)
 
 
+def simplify_lines(lines: pd.DataFrame) -> pd.DataFrame:
+    """ USE TRANSPORT MODEL -> group everything in to dispatchable links
+
+    Args:
+        lines (pd.DataFrame): the line data
+    Returns:
+        grouped lines without duplicated index
+    """
+
+    sum_columns = ["type", "p_nom"]
+    avg_columns = ["length"]
+    min_columns = ["capital_cost"] #, "capital_cost"]
+    other_columns = lines.columns.difference(sum_columns + avg_columns + min_columns + ["bus0", "bus1"])
+
+    agg_links = lines.groupby(["bus0", "bus1"])[sum_columns].sum()
+    agg_links[avg_columns] = lines.groupby(["bus0", "bus1"])[avg_columns].mean()
+    agg_links[other_columns] = lines.groupby(["bus0", "bus1"])[other_columns].first()
+    agg_links[min_columns] = lines.groupby(["bus0", "bus1"])[min_columns].min()
+    agg_links = agg_links.reset_index()
+    agg_links.index = agg_links.bus0 + "-" + agg_links.bus1 + " UHV"
+
+    return agg_links
+
+
 def store_duals_to_network(network: pypsa.Network) -> None:
     """Store dual variables in network components so they get saved to netcdf file."""
     model = getattr(network, "model", None)

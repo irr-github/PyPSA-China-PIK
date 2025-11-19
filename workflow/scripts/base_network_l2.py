@@ -2,6 +2,8 @@
 The base network for China at admin L2 resolution.
 
 This is a temporary step towards full network resolution using the OSM basemap.
+
+The lines are simplified to use the transport model (dispatchable links).
 """
 
 # TODO lines extendable
@@ -17,28 +19,18 @@ from _helpers import configure_logging, mock_snakemake
 
 # from readers import read_generic_province_data
 from readers_geospatial import read_admin2_shapes
-from _pypsa_helpers import make_periodic_snapshots
-from constants import PROV_RENAME_MAP
+from _pypsa_helpers import make_periodic_snapshots, simplify_lines
+from constants import PROV_RENAME_MAP, CHINA_INFLATION, COST_YEAR, YUAN_TO_EUR
+from functions import apply_inflation_correction
 
 
-def _validate_line_regions(lines: pd.DataFrame, admin_l2_shapes: gpd.GeoDataFrame):
-    """check start and end points are valid
-
-    Args:
-        lines (pd.DataFrame): the line data
-        admin_l2_shapes (gpd.GeoDataFrame): the administrative level 2 shapes
-
-    Raises:
-        ValueError: if any line has an invalid start or end region
-    """
-    mask_start = lines.Start_Admin2.isin(admin_l2_shapes.NAME_2.unique())
-    mask_end = lines.End_Admin2.isin(admin_l2_shapes.NAME_2.unique())
-    invalid = lines[~mask_start & ~mask_end]
-
-    if not invalid.empty:
-        raise ValueError(
-            f"The following lines have invalid start or end regions: {invalid.index.tolist()}"
-        )
+def _buses_in_shape(buses, shape, crs="EPSG:4326"):
+    bus_points = gpd.GeoDataFrame(
+        gpd.points_from_xy(buses.x, buses.y),
+        index=buses.index,
+        crs=crs,
+    )
+    return gpd.sjoin_nearest(bus_points, shape)
 
 
 def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index) -> pd.DataFrame:
@@ -63,9 +55,6 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
     gem_lines["build_year"] = (
         gem_lines["Commissioned Year"].fillna(2025).astype(int) + build_time_yrs
     )
-    gem_lines["investment_per_km"] = (
-        gem_lines["Investment (Billion RMB)"] / gem_lines["Transmission Distance（km）"]
-    )  # in bn RMB per km
 
     gem_lines.rename(
         columns={
@@ -74,6 +63,10 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
             "Transmission Distance（km）": "length",
         },
         inplace=True,
+    )
+
+    gem_lines["investment_per_km"] = (
+        gem_lines["Investment (Billion RMB)"] / gem_lines["length"]
     )
     # TODO calculate capital cost using NPV and GEM investment cost & length. Convert to EUR/MW
     gem_lines = gem_lines[
@@ -94,18 +87,41 @@ def _clean_gem_lines(gem_lines: pd.DataFrame, exclude_provinces: list | pd.Index
     gem_lines["p_nom"] = gem_lines.apply(
         lambda row: 0 if row["Status"] == "proposed" else row["p_nom"], axis=1
     )
-    # TODO convert currency and apply NPV to get capital cost per km per W
+    gem_lines["p_nom_min"] = gem_lines["p_nom"]
+    
+    # Convert investment costs to reference year (COST_YEAR) prices
+    # Prepare inflation data DataFrame with yr_val column
+    inflation = pd.DataFrame.from_dict(
+        CHINA_INFLATION, orient='index', columns=["inflation"]
+    )
+    inflation["yr_val"] = inflation["inflation"] / 100 + 1
+    
+    # Apply inflation correction to each line based on its build_year
+    gem_lines["investment"] = gem_lines["build_year"].apply(
+        lambda year: apply_inflation_correction(year, inflation, COST_YEAR)
+    ) * gem_lines["investment_per_km"] * 1e9 * YUAN_TO_EUR  /gem_lines.p_nom
+
     return gem_lines
 
 
-def _buses_in_shape(buses, shape, crs="EPSG:4326"):
-    bus_points = gpd.GeoDataFrame(
-        gpd.points_from_xy(buses.x, buses.y),
-        index=buses.index,
-        crs=crs,
-    )
-    return gpd.sjoin_nearest(bus_points, shape)
+def _validate_line_regions(lines: pd.DataFrame, admin_l2_shapes: gpd.GeoDataFrame):
+    """check start and end points are valid
 
+    Args:
+        lines (pd.DataFrame): the line data
+        admin_l2_shapes (gpd.GeoDataFrame): the administrative level 2 shapes
+
+    Raises:
+        ValueError: if any line has an invalid start or end region
+    """
+    mask_start = lines.Start_Admin2.isin(admin_l2_shapes.NAME_2.unique())
+    mask_end = lines.End_Admin2.isin(admin_l2_shapes.NAME_2.unique())
+    invalid = lines[~mask_start & ~mask_end]
+
+    if not invalid.empty:
+        raise ValueError(
+            f"The following lines have invalid start or end regions: {invalid.index.tolist()}"
+        )
 
 def add_hv_for_sparse_regions(network: pypsa.Network, hv_data: pd.DataFrame):
     """Add HV lines for large regions with sparse admin level 2 coverage
@@ -193,9 +209,15 @@ def _set_uhv_lines(network: pypsa.Network, lines: pd.DataFrame, buses: pd.DataFr
     if not not_matched.empty:
         raise ValueError(f"The following UHV lines have unmatched buses: {not_matched}")
 
-    lines_ = lines[[c for c in lines.columns if c in network.links.columns]]
+    lines_grouped = simplify_lines(lines)
     # FAKE CARRIER -> change if you have full network resolution
+    lines_ = lines_grouped[[c for c in lines_grouped.columns if c in network.links.columns]]
     network.add("Link", lines_.index, **lines_, carrier="AC")
+
+    # future ?
+    # lines_["carrier"] = lines_.type.apply(lambda x: "DC" if x.str.contains("AC") else "AC")
+    # hvdc_lines = lines_.query("carrier == 'DC'")
+    # hvac_lines = lines_.query("carrier == 'AC'")
 
 
 def _set_shapes(
@@ -292,7 +314,7 @@ if __name__ == "__main__":
     configure_logging(snakemake)
     # mp.set_start_method("spawn", force=True)
 
-    yr = int(snakemake.params.refyear)
+    yr = int(snakemake.params.ref_year)
     node_config = snakemake.params.get("node_config", {})
     snapshot_config = snakemake.params.get("snapshots")
     exclude_provinces = node_config.get("exclude_provinces", [])
@@ -312,6 +334,9 @@ if __name__ == "__main__":
     lines = pd.read_csv(lines_p, skiprows=1)
     lines = _clean_gem_lines(lines, exclude_provinces)
     lines["p_max_pu"] = snakemake.params["line_margin"]
+    # temp - APPLY NPV later in prepare network
+    # TODO just export? 
+    lines.rename(columns={"investment": "capital_cost"}, inplace=True)
 
     network = build_base_network(
         admin_l2_shapes, province_shapes, offshore_shapes, lines, snapshot_config, yr

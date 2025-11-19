@@ -12,6 +12,7 @@ import warnings
 import geopandas as gpd
 import pandas as pd
 import pypsa
+from _pypsa_helpers import simplify_lines
 from _helpers import configure_logging, mock_snakemake
 from packaging.version import Version, parse
 from pypsa.clustering.spatial import get_clustering_from_busmap
@@ -209,6 +210,7 @@ if __name__ == "__main__":
             co2_pathway="exp175default",
             heating_demand="positive",
             planning_horizons="2030",
+            cluster_id="IM2XJ4"
         )
 
     configure_logging(snakemake)
@@ -288,6 +290,8 @@ if __name__ == "__main__":
     nc.meta = dict(snakemake.config, **dict(wildcards=dict(snakemake.wildcards)))
 
     compression = snakemake.config.get("io", {}).get("nc_compression", None)
+    nc.links = simplify_lines(nc.links)
+
     nc.export_to_netcdf(snakemake.output.clustered_network, compression=compression)
 
     logger.info(
