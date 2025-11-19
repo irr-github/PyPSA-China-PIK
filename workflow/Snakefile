@@ -212,14 +212,14 @@ rule cluster_network:
 rule build_clustered_population:
     input:
         pop_layouts=DERIVED_COMMON + "/population/pop_layout.nc",
-        regions=DERIVED_COMMON + f"/regions/regions_onshore_s_{cluster_id}.geojson",
+        regions=DERIVED_COMMON + "/regions/regions_onshore_s_{cluster_id}.geojson",
         cutout=CUTOUT_PATH,
     output:
-        clustered_pop_layout=DERIVED_COMMON + f"/pop_layout_base_s_{cluster_id}.csv",
+        clustered_pop_layout=DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.csv",
     log:
-        LOGS_COMMON + f"build_clustered_population/s_{cluster_id}.log",
+        LOGS_COMMON + "build_clustered_population/s_{cluster_id}.log",
     script:
-        "/scripts/build_population_clustered.py"
+        "scripts/build_population_clustered.py"
 
 
 rule build_powerplants:
@@ -255,30 +255,27 @@ rule add_electricity:
         elec_network=DERIVED_COMMON + "/networks/base_elec_{planning_horizons}_{cluster_id}.nc",
 
 
-# TODO find a way to turn off if heat coupling is off 
+# TODO find a way to turn off if heat coupling is off (sector refactor - separate heat coupling)
 rule build_solar_thermal_profiles:
     input:
         cutout=CUTOUT_PATH,
-        # TODO change to new population
-        population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5"
+
+        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.csv"
     output:
-        profile_solar_thermal = DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5"
-    log: LOGS_COMMON + "/build_solar_thermal_profiles.log"
-    threads: 8
-    resources: mem_mb=30000
+        profile_solar_thermal = DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5"
+    log: LOGS_COMMON + "/build_solar_thermal_profiles_s_{cluster_id}.log"
     script: "scripts/build_solar_thermal_profiles.py"
 
 
 rule build_temperature_profiles:
     params:
         nodes = config["nodes"],
-    # TODO change to new population
     input:
-        population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
+        population_map=DERIVED_COMMON+"/"+"population/pop_layout_base_s_{cluster_id}.csv",
         cutout=CUTOUT_PATH,
     output:
-        temp= DERIVED_CUTOUT + "/heating/temperature.h5"
-    log: LOGS_COMMON + "/build_temperature_profiles.log"
+        temp= DERIVED_CUTOUT + "/heating/temperature_s_{cluster_id}.h5"
+    log: LOGS_COMMON + "/build_temperature_profiles_s_{cluster_id}.log"
     threads: 8
     resources: mem_mb=30000
     script: "scripts/build_temperature_profiles.py"
@@ -286,16 +283,15 @@ rule build_temperature_profiles:
 rule build_cop_profiles:
     params:
         nodes = config["nodes"],
-    # TODO change to new population
     input:
-        population_map=DERIVED_COMMON+"/"+"population/population_gridcell_map.h5",
+        population_map=DERIVED_COMMON+"/population/pop_layout_base_s_{cluster_id}.csv",
         cutout=CUTOUT_PATH,
-        temperature=DERIVED_CUTOUT + "/heating/temperature.h5",
+        temperature=DERIVED_CUTOUT + "/heating/temperature_s_{cluster_id}.h5",
     output:
-        cop= DERIVED_CUTOUT + "/heating/hp_cop.h5",
+        cop= DERIVED_CUTOUT + "/heating/hp_cop_s_{cluster_id}.h5",
     # threads: 8
     # resources: mem_mb=30000
-    log: LOGS_COMMON + "/build_cop_profiles.log"
+    log: LOGS_COMMON + "/build_cop_profiles_s_{cluster_id}.log"
     script: "scripts/build_cop_profiles.py"
 
 
@@ -363,16 +359,16 @@ rule build_load_profiles:
         heat_demand = config["heat_demand"],
     input:
         population = DERIVED_COMMON + "/population/population.h5",
-        population_map = DERIVED_COMMON + "/population/population_gridcell_map.h5",
+        population_map = DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.csv",
         cutout = CUTOUT_PATH,
         intraday_profiles="resources/data/heating/heat_load_profile_DK_AdamJensen.csv",
         space_heat_demand="resources/data/heating/SPH_2020.csv",
         hot_water_demand="resources/data/heating/IEA_energysectorroadmaptocarbonneutralityinchina_fig325.csv",
         province_codes = "resources/data/regions/province_codes.csv",
     output:
-        heat_demand_profile = DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
-        energy_totals_name = DERIVED_DATA + "/" +f"energy_totals_{CUTOUT_NAME}_"+"{planning_horizons}.h5"
-    log: LOG_DIR + "/build_load_profiles/build_{planning_horizons}"+f"_{CUTOUT_NAME}.log"
+        heat_demand_profile = DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
+        energy_totals_name = DERIVED_DATA + "/" +f"energy_totals_{CUTOUT_NAME}_"+"{planning_horizons}_s_{cluster_id}.h5"
+    log: LOG_DIR + "/build_load_profiles/build_{planning_horizons}_s_{cluster_id}"+f"_{CUTOUT_NAME}.log"
     threads: ATLITE_NPROCESSES
     resources: mem_mb = ATLITE_NPROCESSES * 5000
     script: "scripts/build_load_profiles.py"
@@ -433,9 +429,9 @@ if config["foresight"] in ["overnight"]:
         input:
             clustered_network=DERIVED_COMMON + "/networks/base_s_{cluster_id}.nc",
             busmap=DERIVED_COMMON + "/networks/busmap_s_{cluster_id}.csv",
-            heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}.h5",
+            heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
-            solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}.h5",
+            solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5",
             cop_name=DERIVED_CUTOUT+"/heating/hp_cop.h5",
             base_elec_load=DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
             # TODO rename path_manager.elec_load() to indicate projection
@@ -451,9 +447,10 @@ if config["foresight"] in ["overnight"]:
         resources: mem_mb=10000
         script: "scripts/prepare_network.py"
 
+    # TODO FIX REMIND COUPLING DOWNSCALING
     paidoff_caps = DERIVED_DATA + "/remind/harmonized_capacities/paid_off_capacities.csv"
     if not config["run"].get("is_remind_coupled", False):
-        paidoff_caps = DERIVED_DATA+ '/existing_infrastructure/capacities.csv'
+        paidoff_caps = []
 
     # only called if brownfield addition is desired
     rule add_existing_baseyear:
