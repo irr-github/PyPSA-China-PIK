@@ -48,7 +48,7 @@ cluster-generic-cancel-cmd: scancel
 default-resources:
   partition: priority
   qos: priority
-  mem_mb: 2000
+  mem_mb: 4000
   time : 10
   threads: 1
 
@@ -78,9 +78,26 @@ set-resources:
     time: 300
     threads: 4
     mem_mb: 30000
+  build_solar_thermal_profiles:
+    time: 30
+    threads: 4
+    mem_mb: 16000
+  build_cop_profiles:
+    time: 30
+    threads: 8
+    mem_mb: 30000
+  build_load_profiles:
+    time: 30
+    threads: 4
+    mem_mb: 16000
   plot_network:
     mem_mb: 8000
     threads: 2
+  fetch_gridded_population:
+    time: 600
+    threads: 1
+    partition: io # login
+    qos: io
   fetch_region_shapes:
     time: 10
     threads: 1
