@@ -18,23 +18,26 @@ logger = logging.getLogger(__name__)
 
 # TODO cleanup
 def build_cop_profiles(
-        pop_map: pd.DataFrame,
-        cutout: atlite.Cutout,
-        temperature: pd.DataFrame,
-        output_path: os.PathLike):
+    pop_map: pd.DataFrame,
+    cutout: atlite.Cutout,
+    temperature: pd.DataFrame,
+    output_path: os.PathLike,
+):
     """Build COP time profiles with atlite and write outputs to output_path as hf5
 
     Args:
-        pop_map (pd.DataFrame): the population map (node resolution)
+        pop_map (pd.DataFrame): population map (shape: clusters x cutout_points)
         cutout (atlite.cutout): the atlite cutout (weather data)
         temperature (pd.DataFrame): the temperature data (node resolution)
         output_path (os.PathLike): the path to write the output to as hdf5
     """
 
-    pop_matrix = sp.sparse.csr_matrix(pop_map.T)
-    index = pop_map.columns
-    index.name = "provinces"
+    pop_matrix = sp.sparse.csr_matrix(pop_map)
+    index = pop_map.index
+    index.name = "bus"
 
+    logger.info("Building soil temperature profiles...")
+    logger.info("Population matrix shape: %s", pop_matrix.shape)
     soil_temp = cutout.soil_temperature(matrix=pop_matrix, index=index)
     soil_temp["time"] = (
         pd.DatetimeIndex(soil_temp["time"].values, tz="UTC")
@@ -43,9 +46,8 @@ def build_cop_profiles(
         .values
     )
 
-
     source_T = temperature
-    source_soil_T = soil_temp.to_pandas().divide(pop_map.sum())
+    source_soil_T = soil_temp.to_pandas().divide(pop_map.T.sum())
 
     # quadratic regression based on Staffell et al. (2012)
     # https://doi.org/10.1039/C2EE22653G
@@ -78,14 +80,14 @@ def build_cop_profiles(
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if "snakemake" not in globals():
-        snakemake = mock_snakemake("build_cop_profiles")
+        snakemake = mock_snakemake("build_cop_profiles", cluster_id="IM2XJ4")
     configure_logging(snakemake, logger=logger)
 
     with pd.HDFStore(snakemake.input.temperature, mode="r") as store:
         temperature = store["temperature"]
 
     with pd.HDFStore(snakemake.input.population_map, mode="r") as store:
-        pop_map = store["population_gridcell_map"]
+        pop_map = store["total"]  # Shape: (35 clusters, 38500 cutout_points)
 
     cutout = atlite.Cutout(snakemake.input.cutout)
 

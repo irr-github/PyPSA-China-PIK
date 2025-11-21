@@ -22,14 +22,14 @@ def build_temp_profiles(pop_map: pd.DataFrame, cutout: atlite.Cutout, temperatur
     Note that atlite only supports a single time zone shift
 
     Args:
-        pop_map (pd.DataFrame): the map to the pop density grid cell data (hdf5)
+        pop_map (pd.DataFrame): population map (shape: clusters x cutout_points)
         cutout (atlite.Cutout): the weather data cutout (atlite cutout)
         temperature_out (PathLike): the output path (hdf5)
     """
     # build a sparse matrix of BUSxCUTOUT_gridcells to weigh the cutout->bus aggregation process
-    pop_matrix = sp.sparse.csr_matrix(pop_map.T)
-    index = pop_map.columns
-    index.name = "provinces"
+    pop_matrix = sp.sparse.csr_matrix(pop_map)
+    index = pop_map.index
+    index.name = "bus"
 
     temperature = cutout.temperature(matrix=pop_matrix, index=index)
     # convert the cutout UTC time to local time
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     configure_logging(snakemake, logger=logger)
 
     with pd.HDFStore(snakemake.input.population_map, mode="r") as store:
-        pop_map = store["population_gridcell_map"]
+        pop_map = store["total"]  # Shape: (35 clusters, 38500 cutout_points)
 
     # this one includes soil temperature
     cutout = atlite.Cutout(snakemake.input.cutout)

@@ -85,6 +85,11 @@ atlite:
       dx: 0.25
       dy: 0.25
       weather_year: 2020
+    China-2021:
+      module: era5
+      dx: 0.25
+      dy: 0.25
+      weather_year: 2021
     China-tests-cutout:
       module: era5
       dx: 5
@@ -121,7 +126,7 @@ renewable:
     potential: simple # or conservative
     natura: true
     min_depth: 8
-    max_depth: 50
+    max_depth: 100
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
   solar:
@@ -181,7 +186,7 @@ Techs:
   coal_ccs_retrofit: false # currently myopic pathway only.  CC = co2 cap 
 
 ## add components (overwrites vre tech choice)
-heat_coupling: false
+heat_coupling: True
 add_biomass: True
 add_hydro: True
 add_H2: True
@@ -299,7 +304,7 @@ solving:
 lines:
   line_length_factor: 1.25
   expansion:
-    transmission_limit: vopt # opt for optimal (unconstrained), v for volume, c for cost. eg. c1.25 limits cost increase to 25% of the base year
+    transmission_limit: c1.07 # opt for optimal (unconstrained), v for volume, c for cost. eg. c1.25 limits cost increase to 25% of the base year
     base_year: 2020 # base step year, the exp limit is relative to this year
 
 security:

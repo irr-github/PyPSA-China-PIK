@@ -127,7 +127,7 @@ def plot_energy_balance(
         color=color_series.loc[supply.columns].values,
     )
     if add_load_line:
-        charge.rename(columns={"Heat Load": "Load"}, inplace=True)
+        # charge.rename(columns={"Heat Load": "Load"}, inplace=True)
         charge["load_pos"] = charge["Load"] * -1
         charge["load_pos"].plot(linewidth=2, color="black", label="Load", ax=ax, linestyle="--")
         charge.drop(columns="load_pos", inplace=True)
@@ -523,7 +523,7 @@ if __name__ == "__main__":
             # co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2",
             heating_demand="positive",
             # configfiles=["resources/tmp/remind_coupled_cg.yaml"],
-            planning_horizons="2050",
+            planning_horizons="2060",
             winter_day1="12-10 21:00",  # mm-dd HH:MM
             winter_day2="12-17 12:00",  # mm-dd HH:MM
             spring_day1="03-31 21:00",  # mm-dd HH:MM

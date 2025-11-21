@@ -357,7 +357,7 @@ rule build_load_profiles:
         scenarios = config["scenario"],
         heat_demand = config["heat_demand"],
     input:
-        population = DERIVED_COMMON + "/population/population.h5",
+        clustered_network=DERIVED_COMMON + "/networks/base_s_{cluster_id}.nc",
         population_map = DERIVED_COMMON + "/population/pop_layout_base_s_{cluster_id}.h5",
         cutout = CUTOUT_PATH,
         intraday_profiles="resources/data/heating/heat_load_profile_DK_AdamJensen.csv",
@@ -365,7 +365,7 @@ rule build_load_profiles:
         hot_water_demand="resources/data/heating/IEA_energysectorroadmaptocarbonneutralityinchina_fig325.csv",
         province_codes = "resources/data/regions/province_codes.csv",
     output:
-        heat_demand_profile = DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
+        heat_demand_profile = DERIVED_DATA +"/"+f"heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
         energy_totals_name = DERIVED_DATA + "/" +f"energy_totals_{CUTOUT_NAME}_"+"{planning_horizons}_s_{cluster_id}.h5"
     log: LOG_DIR + "/build_load_profiles/build_{planning_horizons}_s_{cluster_id}"+f"_{CUTOUT_NAME}.log"
     threads: ATLITE_NPROCESSES
@@ -416,9 +416,10 @@ if config["foresight"] in ["overnight"]:
 
     # TODO switch to pypsa-eur style rule with add_electrictiy, prepare_heat (bundle) and add_heat
     # aim to make this simpler when split heat as rule.
-    CFG_KEYS = ["scenario", "co2_scenarios", "lines", "costs", "electricity", "transmission_efficiency", "line_losses", "no_lines",
-        "Techs", "add_biomass", "add_H2", "max_min_operation", "H2", "add_methanation", "edge_paths", "add_hydro",
-        "time_dep_hp_cop", "water_tanks", "chp_parameters", "solar_cf_correction", "hydro_dams", "hydro", "io"]
+    CFG_KEYS = ["scenario", "co2_scenarios", "run", "lines", "costs", "electricity", "transmission_efficiency", "line_losses", 
+        "no_lines","use_historical_efficiency",   "Techs", "add_biomass", "add_H2", "max_min_operation", "H2", 
+        "add_methanation", "edge_paths", "add_hydro", "heat_coupling", "time_dep_hp_cop", "water_tanks",
+        "chp_parameters", "solar_cf_correction", "hydro_dams", "fossil_ramps", "hydro", "io"]
     rule prepare_networks:
         params:
             config = {k: config[k] for k in CFG_KEYS},
@@ -427,10 +428,10 @@ if config["foresight"] in ["overnight"]:
         input:
             clustered_network=DERIVED_COMMON + "/networks/base_s_{cluster_id}.nc",
             busmap=DERIVED_COMMON + "/networks/busmap_s_{cluster_id}.csv",
-            heat_demand_profile=DERIVED_DATA + f"/heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5",
+            heat_demand_profile=DERIVED_DATA + "/" +f"heating-cutout_{CUTOUT_NAME}/"+"heat_demand_profile_{planning_horizons}_s_{cluster_id}.h5" if config["heat_coupling"] else [],
             central_fraction="resources/data/heating/DH_city_town_2020.h5",
             solar_thermal_name=DERIVED_CUTOUT+f"/heating/solar_thermal-{config['solar_thermal_angle']}"+"_s_{cluster_id}.h5" if config["heat_coupling"] else [],
-            cop_name=DERIVED_CUTOUT+"/heating/hp_cop.h5",
+            cop_name=DERIVED_CUTOUT+"/heating/hp_cop_s_{cluster_id}.h5",
             base_elec_load=DERIVED_DATA + "/load/base_network_hrly_elec_load.nc",
             # TODO rename path_manager.elec_load() to indicate projection
             elec_projections=path_manager.elec_load(),

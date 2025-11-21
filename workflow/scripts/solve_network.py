@@ -459,14 +459,16 @@ def add_water_tank_charger_constraints(n: pypsa.Network, config: dict):
         "carrier == 'water tanks' and index.str.contains('discharger') and not index.str.contains('decentral')"
     ).query("p_nom_extendable")
 
-    grouper_s = central_tanks.location.rename_axis("Store-ext")
-    grouper_l = central_dischargers_ext.rename_axis("Link-ext").location
-    p_nom_over_e_nom = config["water_tanks"].get("p_nom_over_e_nom", 0.2)
-    lhs = (
-        n.model["Store-e_nom"].loc[central_tanks.index].groupby(grouper_s).sum() * p_nom_over_e_nom
-        - n.model["Link-p_nom"].loc[central_dischargers_ext.index].groupby(grouper_l).sum()
-    )
-    n.model.add_constraints(lhs >= 0, name="Central_Water_Tank_p_nom_over_e_nom")
+    if not central_tanks.empty and not central_dischargers_ext.empty:
+        grouper_s = central_tanks.location.rename_axis("Store-ext")
+        grouper_l = central_dischargers_ext.rename_axis("Link-ext").location
+        p_nom_over_e_nom = config["water_tanks"].get("p_nom_over_e_nom", 0.2)
+        lhs = (
+            n.model["Store-e_nom"].loc[central_tanks.index].groupby(grouper_s).sum()
+            * p_nom_over_e_nom
+            - n.model["Link-p_nom"].loc[central_dischargers_ext.index].groupby(grouper_l).sum()
+        )
+        n.model.add_constraints(lhs >= 0, name="Central_Water_Tank_p_nom_over_e_nom")
 
     # limit the p_nom/e_nom ratio to 1 for decentral tanks
     decentral_tanks = n.stores.query("carrier == 'water tanks' & index.str.contains('decentral')")
@@ -477,24 +479,26 @@ def add_water_tank_charger_constraints(n: pypsa.Network, config: dict):
         "carrier == 'water tanks' and not index.str.contains('discharger') and index.str.contains('decentral')"
     ).query("p_nom_extendable")
 
-    grouper_s = decentral_tanks.location.rename_axis("Store-ext")
-    grouper_l = decentral_dischargers_ext.rename_axis("Link-ext").location
-    lhs = (
-        n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
-        - n.model["Link-p_nom"].loc[decentral_dischargers_ext.index].groupby(grouper_l).sum()
-    )
+    if not decentral_tanks.empty and not decentral_dischargers_ext.empty:
 
-    n.model.add_constraints(lhs >= 0, name="Decentral_Water_Tank_p_nom_over_e_nom")
-    lhs = (
-        n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
-        - n.model["Link-p_nom"].loc[decentral_dischargers_ext.index].groupby(grouper_l).sum()
-    )
-    grouper_l = decentral_chargers_ext.rename_axis("Link-ext").location
-    lhs = (
-        n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
-        - n.model["Link-p_nom"].loc[decentral_chargers_ext.index].groupby(grouper_l).sum()
-    )
-    n.model.add_constraints(lhs >= 0, name="Decentral_Water_Tank_p_nom_over_e_nom_charger")
+        grouper_s = decentral_tanks.location.rename_axis("Store-ext")
+        grouper_l = decentral_dischargers_ext.rename_axis("Link-ext").location
+        lhs = (
+            n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
+            - n.model["Link-p_nom"].loc[decentral_dischargers_ext.index].groupby(grouper_l).sum()
+        )
+
+        n.model.add_constraints(lhs >= 0, name="Decentral_Water_Tank_p_nom_over_e_nom")
+        lhs = (
+            n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
+            - n.model["Link-p_nom"].loc[decentral_dischargers_ext.index].groupby(grouper_l).sum()
+        )
+        grouper_l = decentral_chargers_ext.rename_axis("Link-ext").location
+        lhs = (
+            n.model["Store-e_nom"].loc[decentral_tanks.index].groupby(grouper_s).sum()
+            - n.model["Link-p_nom"].loc[decentral_chargers_ext.index].groupby(grouper_l).sum()
+        )
+        n.model.add_constraints(lhs >= 0, name="Decentral_Water_Tank_p_nom_over_e_nom_charger")
 
 
 def add_transmission_constraints(n: pypsa.Network):
@@ -829,12 +833,12 @@ if __name__ == "__main__":
             "solve_networks",
             # co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
             co2_pathway="exp175default",
-            planning_horizons="2060",
+            planning_horizons="2020",
             topology="current+FCG",
             # heating_demand="positive",
             # configfiles="resources/tmp/remind_coupled_cg.yaml",
             heating_demand="positive",
-            cluster_id="prov",
+            cluster_id="IM2XJ4",
             # configfiles="resources/tmp/pseudo-coupled.yaml",
         )
     configure_logging(snakemake)

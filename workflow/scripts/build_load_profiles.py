@@ -10,6 +10,7 @@ import os
 from collections.abc import Iterable
 
 import atlite
+from pypsa import Network
 import numpy as np
 import pandas as pd
 import scipy as sp
@@ -119,7 +120,7 @@ def build_daily_heat_demand_profiles(
 
     Args:
         cutout (atlite.Cutout): the weather cutout object
-        pop_map (pd.DataFrame): the population raster map
+        pop_map (pd.DataFrame): population map (shape: clusters x cutout_points)
         heat_demand_config (dict): the heat demand configuration
         atlite_heating_hr_shift (int): the hour shift for heating demand, needed due to imperfect
             timezone handling in atlite
@@ -129,9 +130,11 @@ def build_daily_heat_demand_profiles(
     Returns:
         pd.DataFrame: regional daily heating demand with April to Sept forced to 0
     """
-    pop_matrix = sp.sparse.csr_matrix(pop_map.T)
-    index = pop_map.columns
-    index.name = "provinces"
+    pop_matrix = sp.sparse.csr_matrix(pop_map)
+    logger.info("Population matrix shape: %s", pop_matrix.shape)
+    index = pop_map.index
+    index.name = "bus"
+    logger.info("pop matrix index: %s", index)
 
     # TODO clarify a bit here, maybe the po_matrix should be normalised earlier?
     # unclear whether it's per cap or not
@@ -145,7 +148,9 @@ def build_daily_heat_demand_profiles(
         hour_shift=atlite_heating_hr_shift,
     )
 
-    regonal_daily_hd = total_hd.to_pandas().divide(pop_map.sum())
+    # Sum population per cluster (across cutout points) to normalize
+    pop_per_cluster = pop_map.sum(axis=1)  # axis=1 sums columns, giving Series indexed by clusters
+    regonal_daily_hd = total_hd.to_pandas().divide(pop_per_cluster)
     # input given as dd-mm but loc as yyyy-mm-dd
     if switch_month_day:
         start_day = "{}-{}".format(*heat_demand_config["start_day"].split("-")[::-1])
@@ -220,6 +225,30 @@ def build_heat_demand_profile(
     water_heat_demand = intraday_year_profiles.mul(hot_water_per_day)
 
     return space_heat_demand, water_heat_demand
+
+
+def distribute_heat_demand_by_pop(
+    population_node: pd.DataFrame, space_heat_demand_total: pd.Series
+) -> pd.DataFrame:
+    """Distribute heat demand by population
+
+    Args:
+        population (pd.Series): population by node
+        total_heat_demand (pd.Series): total heat demand
+
+    Returns:
+        pd.DataFrame: heat demand distributed by population
+    """
+    population_node["province_population"] = population_node.groupby(
+        "province"
+    ).population.transform("sum")
+    population_node["fraction"] = population_node.population / population_node.province_population
+    population_node["province_heat_demand"] = population_node.province.map(
+        space_heat_demand_total.squeeze()
+    )
+    nodal_sph = population_node["fraction"] * population_node["province_heat_demand"]
+
+    return nodal_sph
 
 
 def scale_degree_day_to_reference(
@@ -348,6 +377,7 @@ if __name__ == "__main__":
             # co2_pathway="remind_ssp2NPI",
             co2_pathway="exp175default",
             topology="Current+Neigbor",
+            cluster_id="IM2XJ4",
         )
 
     configure_logging(snakemake, logger=logger)
@@ -374,22 +404,31 @@ if __name__ == "__main__":
 
         # load heat data
         with pd.HDFStore(snakemake.input.population_map, mode="r") as store:
-            pop_map = store["population_gridcell_map"]
-        with pd.HDFStore(snakemake.input.population, mode="r") as store:
-            population_count = store["population"]
+            pop_map = store["total"]  # Shape: (35 clusters, 38500 cutout_points)
+
+        population_node = pop_map.sum(axis="columns").to_frame("population")
         intraday_profiles = pd.read_csv(snakemake.input.intraday_profiles, index_col=0)
 
         space_heat_demand_total = (
             pd.read_csv(snakemake.input.space_heat_demand, index_col=0) * TWH2MWH
-        )
-        space_heat_demand_total = space_heat_demand_total.squeeze()
+        ).squeeze()
+
         hot_water_total = _read_iea_hot_water(snakemake.input.hot_water_demand)
         hot_water_total = _extend_iea_projections(
             hot_water_total, scenario_config["planning_horizons"]
         )
+
+        # assign provinces to node populations
+        n = Network(snakemake.input.clustered_network)
+        prov_map = n.buses.province
+        population_node["province"] = population_node.index.map(prov_map)
+        # distribute by population
+        nodal_space_heat = distribute_heat_demand_by_pop(population_node, space_heat_demand_total)
+
         atlite_hour_shift = calc_atlite_heating_timeshift(date_range, use_last_ts=False)
         cutout = atlite.Cutout(snakemake.input.cutout)
 
+        logger.info("Building daily heat demand profile from atlite cutout")
         reg_daily_hd = build_daily_heat_demand_profiles(
             cutout,
             pop_map,
@@ -398,11 +437,15 @@ if __name__ == "__main__":
             switch_month_day=True,
             atlite_year=weather_year,
         )
-
+        logger.info("Daily heat demand profile built from atlite cutout")
+        logger.info(reg_daily_hd.head())
+        logger.info(reg_daily_hd.shape)
         # Scale the degree day to reference values
-        daily_heat_demand = scale_degree_day_to_reference(reg_daily_hd, space_heat_demand_total)
+        daily_heat_demand = scale_degree_day_to_reference(reg_daily_hd, nodal_space_heat)
         # ==== SCALE TO FUTURE DEMAND ======
         # TODO soft-code ref/base year or find a better variable name
+        logger.info(daily_heat_demand.head())
+        logger.info(daily_heat_demand.shape)
         demand_growth_factor = project_heat_demand(
             planning_horizons, snakemake.wildcards["heating_demand"], ref_year=REF_YEAR
         )
@@ -410,8 +453,12 @@ if __name__ == "__main__":
 
         # distribute evenly across year
         hot_water_per_day = (
-            downscale_by_pop(hot_water_total.loc[planning_horizons], population_count) / 365
+            downscale_by_pop(hot_water_total.loc[planning_horizons], population_node.population)
+            / 365
         )
+        logger.info("DHW built")
+        logger.info(hot_water_per_day.head())
+        logger.info(hot_water_per_day.shape)
 
         space_heat_demand, domestic_hot_water = build_heat_demand_profile(
             daily_heat_demand,

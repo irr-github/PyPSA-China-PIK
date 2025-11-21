@@ -17,14 +17,17 @@ def build_solar_thermal_profiles(
     """Build per unit solar thermal time availability profiles and save them to a file
 
     Args:
-        pop_map (pd.DataFrame): DataFrame with the population map
+        pop_map (pd.DataFrame): DataFrame with the population map (shape: clusters x cutout_points)
         cutout (atlite.Cutout): atlite cutout object with the weather data
         outp_path (os.PathLike): Path to the output file
     """
-    pop_matrix = sp.sparse.csr_matrix(pop_map.T)
-    index = pop_map.columns
-    index.name = "provinces"
+    pop_matrix = sp.sparse.csr_matrix(pop_map)
+    logger.info("Population matrix shape: %s", pop_matrix.shape)
+    index = pop_map.index
+    index.name = "bus"
 
+    # TODO -> make orientation user set
+    logger.info("Building solar thermal spatio-temporal profiles...")
     st = cutout.solar_thermal(
         orientation={
             "slope": float(snakemake.config["solar_thermal_angle"]),
@@ -44,12 +47,12 @@ def build_solar_thermal_profiles(
 
 if __name__ == "__main__":
     if "snakemake" not in globals():
-        snakemake = mock_snakemake("build_solar_thermal_profiles")
+        snakemake = mock_snakemake("build_solar_thermal_profiles", cluster_id="IM2XJ4")
 
     configure_logging(snakemake, logger=logger)
 
     with pd.HDFStore(snakemake.input.population_map, mode="r") as store:
-        pop_map = store["population_gridcell_map"]
+        pop_map = store["total"]  # Shape: (35 clusters, 38500 cutout_points)
 
     cutout = atlite.Cutout(snakemake.input.cutout)
     build_solar_thermal_profiles(pop_map, cutout, snakemake.output.profile_solar_thermal)

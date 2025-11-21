@@ -910,14 +910,16 @@ def add_heat_coupling(
     nodes = network.buses.query("carrier=='AC'")
 
     central_fraction = pd.read_hdf(paths["central_fraction"])
+    # TODO determine central fraction based on cluster and population density
+    central_fraction = nodes["province"].map(central_fraction)
     with pd.HDFStore(paths["heat_demand_profile"], mode="r") as store:
         heat_demand = store["heat_demand_profiles"]
-        # TODO fix this if not working
-        heat_demand.index = heat_demand.index.tz_localize(None)
-        heat_demand = heat_demand.loc[network.snapshots]
-        # NOTE electric boilers not yet subtracted from load
         hot_water_demand = store.get("hot_water_demand")
-        hot_water_demand = hot_water_demand.loc[network.snapshots]
+    # TODO fix this if not working
+    heat_demand.index = heat_demand.index.tz_localize(None)
+    heat_demand = heat_demand.loc[network.snapshots]
+    # NOTE electric boilers not yet subtracted from load
+    hot_water_demand = hot_water_demand.loc[network.snapshots]
 
     network.add(
         "Bus",
@@ -946,7 +948,8 @@ def add_heat_coupling(
         nodes.index,
         suffix=" decentral heat",
         bus=nodes.index + " decentral heat",
-        p_set=heat_demand[nodes].multiply(1 - central_fraction[nodes]) + hot_water_demand[nodes],
+        p_set=heat_demand[nodes.index].multiply(1 - central_fraction[nodes.index])
+        + hot_water_demand[nodes.index],
     )
 
     network.add(
@@ -955,7 +958,7 @@ def add_heat_coupling(
         carrier="heat",
         suffix=" central heat",
         bus=nodes.index + " central heat",
-        p_set=heat_demand[nodes].multiply(central_fraction[nodes]),
+        p_set=heat_demand[nodes.index].multiply(central_fraction[nodes.index]),
     )
 
     if "heat pump" in config["Techs"]["vre_techs"]:
@@ -1045,8 +1048,8 @@ def add_heat_coupling(
             tes_tau = config["water_tanks"]["tes_tau"][cat.strip()]
             network.add(
                 "Store",
-                +cat + "water tank",
-                bus=+cat + "water tanks",
+                nodes.index + cat + "water tank",
+                bus=nodes.index + cat + "water tanks",
                 carrier="water tanks",
                 e_cyclic=True,
                 e_nom_extendable=True,
@@ -1208,7 +1211,7 @@ def add_heat_coupling(
         # NOTE CHP + generator | boiler is a key word for the constraint
         network.add(
             "Link",
-            name=nodes[nodes != "Beijing"],
+            name=nodes[nodes.index != "Beijing"].index,
             suffix=" CHP coal generator",
             bus0=nodes.index[nodes.index != "Beijing"] + " coal fuel",
             bus1=nodes.index[nodes.index != "Beijing"],
@@ -1400,6 +1403,7 @@ def add_hydro(
         e_nom=effective_capacity,
         e_initial=initial_capacity,
         e_cyclic=True,
+        carrier="reservoir",
         # TODO fix all config["costs"]
         marginal_cost=config["hydro"]["marginal_cost"]["reservoir"],
     )
@@ -1700,6 +1704,7 @@ def prepare_network(
             e_min_pu=min_charge,
             capital_cost=costs.at["battery storage", "capital_cost"],
             lifetime=costs.at["battery storage", "lifetime"],
+            carrier="battery storage",
         )
 
         # TODO understand/remove sources, data should not be in code
