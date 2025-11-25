@@ -220,7 +220,7 @@ def fetch_prefecture_shapes(
             "Hong Kong": "HongKong",
             "Ningxia Hui": "Ningxia",
         }
-    }
+    },
 ):
     """
     Fetch county-level shapefiles for China.
@@ -234,7 +234,6 @@ def fetch_prefecture_shapes(
             mask = gdf.query(f"{col} == '{old_name}'").index
             gdf.loc[mask, col] = new_name
     return gdf[["COUNTRY", "NAME_1", "NAME_2", "NL_NAME_2", "NL_NAME_1", "geometry"]]
-
 
 
 if __name__ == "__main__":
@@ -254,7 +253,6 @@ if __name__ == "__main__":
     # TODO it would be better to filter by set regions after making the voronoi polygons
     regions = fetch_province_shapes()
     prefectures = fetch_prefecture_shapes()
-
 
     regions.to_file(snakemake.output.province_shapes, driver="GeoJSON")
     logger.info(f"Province shapes saved to {snakemake.output.province_shapes}")

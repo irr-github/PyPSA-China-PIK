@@ -1,3 +1,9 @@
+"""Plot time series data for energy system analysis.
+
+This module creates time series plots including load profiles, generation patterns,
+storage operations, and other temporal data visualizations for the PyPSA-China model.
+"""
+
 import logging
 import os.path
 from os import makedirs

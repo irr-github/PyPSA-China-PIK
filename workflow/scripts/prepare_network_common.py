@@ -1,3 +1,10 @@
+"""Common network preparation utilities and functions.
+
+This module provides shared utilities and functions for network preparation
+including hydro power integration, cost calculations, and other common
+network setup operations for the PyPSA-China energy system model.
+"""
+
 # Shared functions for building the China Regional resolution networks
 
 import geopandas as gpd

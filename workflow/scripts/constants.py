@@ -77,6 +77,14 @@ PROV_NAMES = list(REGIONAL_GEO_TIMEZONES_DEFAULT)
 
 
 def filter_buses(names) -> list:
+    """Filter bus names to include only those in PROV_NAMES.
+
+    Args:
+        names: Iterable of bus names to filter
+
+    Returns:
+        list: List of names that are present in PROV_NAMES
+    """
     return [name for name in names if name in PROV_NAMES]
 
 

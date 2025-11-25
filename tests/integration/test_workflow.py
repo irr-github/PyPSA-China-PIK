@@ -116,7 +116,7 @@ def test_dry_run(make_test_config_file):
     """Simple workflow test to check the snakemake inputs and outputs are valid"""
     cfg = make_test_config_file
     cmd = f"snakemake --configfile {cfg} -n -f"
-    cmd += " --rerun-incomplete"
+    cmd += " --rerun-incomplete --rerun-triggers input"
     res = launch_subprocess(cmd)
     hash_id = None
     if res.returncode != 0:

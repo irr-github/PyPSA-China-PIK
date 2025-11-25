@@ -18,7 +18,6 @@ from _helpers import configure_logging, mock_snakemake
 from _pypsa_helpers import assign_locations, calc_lcoe
 
 logger = logging.getLogger(__name__)
-logger = logging.getLogger(__name__)
 idx = pd.IndexSlice
 
 opt_name = {"Store": "e", "Line": "s", "Transformer": "s"}
@@ -430,6 +429,16 @@ def calculate_curtailment(n: pypsa.Network, label: str, curtailment: pd.DataFram
 
 # TODO what does this actually do? is it needed?
 def calculate_energy(n: pypsa.Network, label: str, energy: pd.DataFrame) -> pd.DataFrame:
+    """Calculate energy production/consumption by carrier from network components.
+
+    Args:
+        n (pypsa.Network): PyPSA Network object
+        label (str): Label for the energy calculation scenario
+        energy (pd.DataFrame): DataFrame to store energy results
+
+    Returns:
+        pd.DataFrame: Updated energy DataFrame with calculated values
+    """
     for c in n.iterate_components(n.one_port_components | n.branch_components):
         if c.name in n.one_port_components:
             c_energies = (
@@ -580,15 +589,15 @@ def calculate_weighted_prices(
     Returns:
         pd.DataFrame: updated weighted_prices
     """
-    entries = pd.Index(["electricity", "heat", "H2", "CO2 capture", "gas", "biomass"])
-    weighted_prices = weighted_prices.reindex(entries)
+    # --- baseline entries ---
+    baseline_entries = pd.Index(["electricity", "heat", "H2", "CO2 capture", "gas", "biomass"])
 
-    # loads
+    # --- loads ---
     load_rev = -1 * n.statistics.revenue(comps="Load", groupby=pypsa.statistics.get_bus_carrier)
-    prices = load_rev / n.statistics.withdrawal(
+    load_withdrawal = n.statistics.withdrawal(
         comps="Load", groupby=pypsa.statistics.get_bus_carrier
     )
-    prices.rename(index={"AC": "electricity"}, inplace=True)
+    prices = (load_rev / load_withdrawal).rename(index={"AC": "electricity"})
 
     # stores
     withdr = n.statistics.withdrawal(comps="Store")

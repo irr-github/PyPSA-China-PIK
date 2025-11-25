@@ -69,8 +69,8 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
         pd.DataFrame: Cleaned GEM data.
     """
 
-    valid_project_states = gem_cfg["status"]
-    GEM = gem_data.query("Status in @valid_project_states")
+    _valid_project_states = gem_cfg["status"]
+    GEM = gem_data.query("Status in @_valid_project_states")
     GEM.rename(columns={"Plant _ Project name": "Plant name"}, inplace=True)
     GEM.loc[:, "Retired year"] = GEM["Retired year"].replace("not found", np.nan)
     GEM.loc[:, "Start year"] = GEM["Start year"].replace("not found", np.nan)
@@ -209,9 +209,6 @@ def assign_node_from_gps(
     Returns:
         pd.DataFrame: DataFrame with assigned nodes and diagnostic columns
     """
-    import logging
-
-    logger = logging.getLogger(__name__)
 
     # Create GeoDataFrame from lat/lon, project to metric CRS
     gdf = gpd.GeoDataFrame(

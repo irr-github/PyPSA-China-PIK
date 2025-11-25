@@ -1,3 +1,9 @@
+"""Automatic generation of reference documentation pages for MkDocs.
+
+This script automatically generates documentation pages for all Python scripts
+in the workflow/scripts directory using mkdocs-gen-files.
+"""
+
 from pathlib import Path
 
 import mkdocs_gen_files

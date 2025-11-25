@@ -15,17 +15,22 @@ logger = logging.getLogger(__name__)
 def load_pop_csv(csv_path: os.PathLike, year = POP_YEAR) -> pd.DataFrame:
     """Load the national bureau of statistics of China population
     (Yearbook - Population, table 2.5 pop at year end by Region)
+    
+    Supports both formats:
+    - Yearbook format (2.5 pop at year end by Region)
+    - Historical data format with comment lines
 
     Args:
-        csv_path (os.Pathlike): the csv path
+        csv_path (os.Pathlike): Path to the CSV file
 
     Returns:
-        pd.DataFrame: the population for constants.POP_YEAR by province
+        pd.DataFrame: The population for constants.POP_YEAR by province
+        
     Raises:
-        ValueError: if the province names are not as expected
+        ValueError: If the province names do not match expected names
     """
-
-    df = pd.read_csv(csv_path, index_col=0, header=0)
+    # Read CSV, skipping comment lines that start with #
+    df = pd.read_csv(csv_path, index_col=0, header=0, comment='#')
     df = df.apply(pd.to_numeric)
     if not year in df.columns:
         raise ValueError(f"Requested year {year} not in {csv_path}. Avail: {df.columns}")

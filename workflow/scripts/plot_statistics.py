@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""Plot statistical analysis and summary charts for energy system results.
+
+This module creates statistical plots including capacity factors, cost breakdowns,
+energy balances, and other key performance indicators for the PyPSA-China model.
+Adapted from PyPSA-Eur by PyPSA-China authors.
+"""
 # SPDX-FileCopyrightText: : 2017-2024 The PyPSA-Eur Authors
 # 2014 Adapted from pypsa-eur by PyPSA-China authors
 #

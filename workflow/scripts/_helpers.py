@@ -782,3 +782,19 @@ def set_plot_test_backend(config: dict):
         import matplotlib
 
         matplotlib.use("Agg")
+
+
+def setup_proj_environment():
+    """Set up PROJ_LIB environment variable for GDAL to find projection database."""
+    if "PROJ_LIB" not in os.environ:
+        if "CONDA_PREFIX" in os.environ:
+            proj_lib = os.path.join(os.environ["CONDA_PREFIX"], "share", "proj")
+            if os.path.isdir(proj_lib):
+                os.environ["PROJ_LIB"] = proj_lib
+                logger.info(f"Set PROJ_LIB to: {proj_lib}")
+            else:
+                logger.warning(f"PROJ data directory not found at: {proj_lib}")
+        else:
+            logger.warning("CONDA_PREFIX not set, PROJ_LIB may not be configured")
+    else:
+        logger.info(f"PROJ_LIB already set to: {os.environ['PROJ_LIB']}")

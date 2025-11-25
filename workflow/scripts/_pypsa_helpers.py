@@ -6,6 +6,8 @@ import re
 
 import numpy as np
 import pandas as pd
+import numpy as np
+import pandas as pd
 import pypsa
 import pytz
 
@@ -79,6 +81,33 @@ def aggregate_costs(
         )
 
     return costs
+
+
+# TODO fix timezones/centralsie, think Shanghai won't work on its own
+def generate_periodic_profiles(
+    dt_index=None,
+    col_tzs=pd.Series(index=PROV_NAMES, data=len(PROV_NAMES) * ["Shanghai"]),
+    weekly_profile=range(24 * 7),
+):
+    """Generate weekly hourly profiles for each province, from pypsa-eur workflow.
+
+    Args:
+        dt_index: Time index for the profiles
+        col_tzs: Time zones for each province
+        weekly_profile: 168-hour weekly profile pattern
+
+    Returns:
+        pd.DataFrame: Weekly profiles for each province
+    """
+
+    weekly_profile = pd.Series(weekly_profile, range(24 * 7))
+    # TODO fix, no longer take into accoutn summer time
+    # ALSO ADD A TODO in base_network
+    week_df = pd.DataFrame(index=dt_index, columns=col_tzs.index)
+    for ct in col_tzs.index:
+        week_df[ct] = [24 * dt.weekday() + dt.hour for dt in dt_index.tz_localize(None)]
+        week_df[ct] = week_df[ct].map(weekly_profile)
+    return week_df
 
 
 def assign_locations(n: pypsa.Network):

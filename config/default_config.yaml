@@ -72,7 +72,8 @@ enable:
   build_cutout: false
   retrieve: true  
   retrieve_cutout: false
-  
+  retrieve_raster: true
+
 atlite:
   cutout_name: "China-2020c"
   freq: "h"
@@ -111,8 +112,13 @@ renewable:
     capacity_per_sqkm: 3 # ScholzPhd Tab 4.3.1: 10MW/km^2
     potential: simple # or conservative
     natura: false
+    max_altitude: 3000 # m
+    max_slope: 20 # %
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
+    # Copernicus LC100 land cover codes for allowed areas
+    # 20=Shrubland, 30=Herbaceous, 40=Agriculture, 60=Bare, 100=Moss
+    land_cover_codes: [20, 30, 40, 60, 100]
   offwind:
     cutout: China-2020c
     resource:
@@ -129,6 +135,8 @@ renewable:
     max_depth: 100
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
+    # Offshore wind uses water depth from GEBCO, not land cover codes
+    land_cover_codes: null
   solar:
     cutout: China-2020c
     resource:
@@ -146,6 +154,10 @@ renewable:
     natura: false
     clip_p_max_pu: 1.e-2
     min_p_nom_max: 1.e-2
+    # Copernicus LC100 land cover codes for allowed areas
+    # 20=Shrubland, 30=Herbaceous, 40=Agriculture, 50=Urban, 60=Bare, 100=Moss
+    land_cover_codes: [20, 30, 50, 60, 100]
+    max_slope: 12 # %
 renewable_potential_cutoff: 200 # MW, skip low potentials
 export_renewable_potential_raster: false
 
@@ -185,8 +197,15 @@ Techs:
   hydrogen_lines: true
   coal_ccs_retrofit: false # currently myopic pathway only.  CC = co2 cap 
 
+## Nuclear capacity growth limit
+nuclear_reactors:
+  enable_growth_limit: true  # Switch: true=enable growth limit, false=unrestricted growth
+  max_annual_capacity_addition: 5000  # Fixed MW to add per year
+  base_year: 2020  # Base year for capacity reference (should be <= first planning year)
+  # base_capacity: 50000  # (optional) Base year total capacity in MW. If not set, auto-detect from base_year network
+
 ## add components (overwrites vre tech choice)
-heat_coupling: True
+heat_coupling: false
 add_biomass: True
 add_hydro: True
 add_H2: True
@@ -308,7 +327,7 @@ lines:
     base_year: 2020 # base step year, the exp limit is relative to this year
 
 security:
-  line_margin: 70 # max percent of line capacity
+  line_security_margin: 70 # max percent of line capacity
   
 # brownfield options
 existing_capacities:
@@ -366,3 +385,13 @@ world_population_raster:
   release_yr: 2024
   version: 1
   revision: "B"
+
+subsidies:
+  # New format: subsidies.fuel_type -> province -> value (EUR/MWh) only allowed for negative values (subsidies)
+  gas:
+    Guangdong: -8
+    Jiangsu:  -8.5
+    Zhejiang: -9
+    Beijing: -10  
+    Tianjin: -10
+    Shanghai: -10

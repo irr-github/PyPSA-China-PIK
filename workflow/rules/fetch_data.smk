@@ -24,8 +24,6 @@ release_yr, rev, yr, v = (
     config["world_population_raster"]["year"],
     config["world_population_raster"]["version"],
 )
-
-
 rule fetch_gridded_population:
     params:
         config = config["world_population_raster"],
@@ -37,34 +35,30 @@ rule fetch_gridded_population:
     script:
         "../scripts/fetch_gridded_pop.py"
 
-# TODO build actual fetch rules with the sentinel/copernicus APIs.
-# TODO See if there are datasets succeeding the S2 LC100 cover to get newer data
+
+# This replaces the old approach of using separate percentage cover fraction rasters
+# The discrete classification map contains integer codes for different land cover types
+# See: https://zenodo.org/records/3939050
 if config["enable"].get("retrieve_raster", True):
 
-    rule retrieve_Grass_raster:
-        input: storage.http("https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Grass-CoverFraction-layer_EPSG-4326.tif")
-        output: "resources/data/landuse_availability/Grass.tif"
-        run: shutil.move(input[0], output[0])
-    rule retrieve_Bare_raster:
-        input: storage.http("https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Bare-CoverFraction-layer_EPSG-4326.tif")
-        output: "resources/data/landuse_availability/Bare.tif"
-        run: shutil.move(input[0], output[0])
-    rule retrieve_Shrubland_raster:
-        input: storage.http("https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Shrub-CoverFraction-layer_EPSG-4326.tif")
-        output: "resources/data/landuse_availability/Shrubland.tif"
-        run: shutil.move(input[0], output[0])
-    rule retrieve_Build_up_raster:
-        input: storage.http("https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_BuiltUp-CoverFraction-layer_EPSG-4326.tif")
-        output: "resources/data/landuse_availability/Build_up.tif"
-        run: shutil.move(input[0], output[0])
+    rule retrieve_copernicus_land_cover:
+        input:
+            storage.http(
+                "https://zenodo.org/records/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
+            ),
+        output:
+            "resources/data/landuse_availability/Copernicus_LC100_discrete_classification_2019.tif",
+        run:
+            os.makedirs(os.path.dirname(output[0]), exist_ok=True)
+            shutil.move(input[0], output[0])
 
     rule retrieve_bathymetry_raster:
         input:
             gebco=storage.http(
-                "https://zenodo.org/record/16792792/files/GEBCO_tiff.zip"
+                "https://zenodo.org/record/17697456/files/GEBCO_tiff.zip"
             ),
         output:
-            gebco="resources/data/landuse_availability/GEBCO_tiff/gebco_2024_CN.tif",
+            gebco="resources/data/landuse_availability/GEBCO_tiff/gebco_2025_CN.tif",
         params:
             zip_file="resources/data/landuse_availability/GEBCO_tiff.zip",
         run:
@@ -84,9 +78,11 @@ elif config["enable"].get("retrieve_cutout", False):
 
     rule retrieve_cutout:
         input:
-            zenodo_cutout = storage.http("https://zenodo.org/record/16792792/files/China-2020c.nc"),
+            zenodo_cutout=storage.http(
+                "https://zenodo.org/record/16792792/files/China-2020c.nc"
+            ),
         output:
-            cutout = "resources/cutouts/China-2020c.nc",
+            cutout="resources/cutouts/China-2020c.nc",
         run:
             os.makedirs(os.path.dirname(output.cutout), exist_ok=True)
             shutil.move(input.zenodo_cutout, output.cutout)

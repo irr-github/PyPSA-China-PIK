@@ -9,7 +9,11 @@ import logging
 import os.path
 import logging
 
-from scripts._helpers import PathManager, get_cutout_params, ConfigManager
+from scripts._helpers import (
+    PathManager,
+    get_cutout_params,
+    ConfigManager,
+)
 
 # NB: duplicated parameters will be overwritten by the last read cfg
 
@@ -54,8 +58,13 @@ include: "rules/visualize_inputs.smk"
 
 
 if config["run"].get("is_test", False):
-    localrules: plot_all, plot_summary, plot_snapshots, build_population, dag, fetch_region_shapes, plot_input_costs
+    localrules: build_population, dag, fetch_region_shapes
+# Mark calculate_gebco_slope as local rule (always runs locally, not on Slurm)
+localrules: calculate_gebco_slope
 
+if config["run"].get("is_test", False):
+    localrules: build_population, dag, fetch_region_shapes
+    print([RESULTS_DIR+ '/postnetworks/ntwk_{planning_horizons}.nc' for v in config["scenario"]["planning_horizons"]])
 # ====== set up snakemake providers =======
 storage:
     provider="http",
@@ -77,7 +86,7 @@ elif config["foresight"] in ["overnight", "myopic"]:
             ),
             # network plot
             expand(
-                RESULTS_DIR+"/plots/networks/ntwk_{planning_horizons}-cost.png",      
+                RESULTS_DIR+"/plots/networks/ntwk_{planning_horizons}-cost.png",
                 **config["scenario"]
             ),
             expand(RESULTS_DIR+"/plots/statistics_{planning_horizons}/", **config["scenario"]),
@@ -295,15 +304,38 @@ rule build_cop_profiles:
     log: LOGS_COMMON + "/build_cop_profiles_s_{cluster_id}.log"
     script: "scripts/build_cop_profiles.py"
 
+if not config["run"].get("is_test", False):
+    rule calculate_gebco_slope:
+        """
+        Calculate slope from GEBCO altimetry/bathymetry data.
+        
+        Process:
+        1. Reproject to Mollweide (ESRI:54009) - equal-area projection for accurate slope
+        2. Calculate slope in percent using gdaldem
+        3. Reproject back to EPSG:4326 for compatibility with atlite
+        
+        Output CRS: EPSG:4326 (WGS84 Geographic)
+        Output format: NetCDF4 with DEFLATE compression
+        """
+        input:
+            gebco=f"{LU_RASTER}/GEBCO_tiff/gebco_2025_CN.tif",
+        output:
+            slope=f"{LU_RASTER}/GEBCO_tiff/gebco_2025_CN_slope.nc",
+        log:
+            "logs/gebco_slope_calculation.log"
+        script:
+            "scripts/calculate_gebco_slope.py"
+        
 
-rasters = ["Build_up", "Grass", "Bare", "Shrubland"]
 rule build_availability_matrix:
     params:
         nodes = config["nodes"],
         vre_config = config["renewable"],
+        land_cover_codes = lambda wildcards: config["renewable"][wildcards.technology].get("land_cover_codes")
     input:
         # GEBCO bathymetry (water depth)
-        gebco=f"{LU_RASTER}/GEBCO_tiff/gebco_2024_CN.tif",
+        gebco=f"{LU_RASTER}/GEBCO_tiff/gebco_2025_CN.tif",
+        gebco_slope=f"{LU_RASTER}/GEBCO_tiff/gebco_2025_CN_slope.nc",
         cutout=CUTOUT_PATH,
         regions_offshore=DERIVED_COMMON + "/regions/regions_offshore_s_{cluster_id}.geojson",
         regions_onshore=DERIVED_COMMON + "/regions/regions_onshore_s_{cluster_id}.geojson",
@@ -314,11 +346,10 @@ rule build_availability_matrix:
                         + "WDPA_WDOECM_Oct2024_Public_CN_shp-polygons.shp"
             for i in range(3)
         },
-        # available land:
-        **{
-            f"{raster}_raster": f"{LU_RASTER}/{raster}.tif"
-            for raster in rasters
-        },
+        # Copernicus LC100 discrete classification land cover map
+        # Replaces old percentage cover fraction rasters (Grass, Bare, Shrubland)
+        copernicus_land_cover=f"{LU_RASTER}/Copernicus_LC100_discrete_classification_2019.tif",
+        # rice_paddies=f"{LU_RASTER}/CCD-Rice-China-2016-v1.1.tif",
     output:
         availability_matrix= DERIVED_CUTOUT + "/availability_matrix_{technology}_{cluster_id}.nc",
     log: LOGS_COMMON + "/build_availability_matrix_{technology}_{cluster_id}.log"
@@ -374,6 +405,31 @@ rule build_load_profiles:
     resources: mem_mb = ATLITE_NPROCESSES * 5000
     script: "scripts/build_load_profiles.py"
 
+# Only build transport demand if electric vehicles are enabled
+if config.get("sectors", {}).get("electric_vehicles", False):
+    if not config["run"].get("is_remind_coupled", False):
+        raise ValueError(
+            "Electric vehicles require REMIND data for transport demand.\n"
+            "Please choose one of the following:\n"
+            "1. Set 'run.is_remind_coupled: true' and provide REMIND data files\n"
+            "2. Set 'sectors.electric_vehicles: false' to run electricity-only model"
+        )
+    rule build_transport_demand:
+        params:
+            snapshots=config["snapshots"],
+        input:
+            charging_data_passenger="resources/data/transport/charging_ratio_passenger.csv",
+            charging_data_freight="resources/data/transport/charging_ratio_freight.csv",
+            sectoral_load=DERIVED_DATA + "/remind/ac_load_disagg.csv" if config["run"].get("is_remind_coupled", False) else DERIVED_DATA + "/load/regio_hrly_ac_load_{planning_horizons}.h5",
+
+        output:
+            charging_demand_passenger=DERIVED_DATA + "/transport/charging_demand_passenger_{planning_horizons}.csv",
+            charging_demand_freight=DERIVED_DATA + "/transport/charging_demand_freight_{planning_horizons}.csv",
+        threads: 1
+        resources: mem_mb=2000
+        log: LOG_DIR + "/build_transport_demand/transport_demand_{planning_horizons}.log"
+        script: "scripts/build_transport_demand.py"
+
 
 rule build_biomass_potential:
     input:
@@ -416,6 +472,7 @@ rsc_params = {key : "_".join([f"{k}{v}" for k, v in resource_class_cfg[key].item
 if config["foresight"] in ["overnight"]:
     
     add_brownfield = "-brownfield" if config["existing_capacities"].get("add", False) else ""
+    add_sectors = "-sector" if config.get("sectors", {}).get("electric_vehicles", False) else ""
 
     # TODO switch to pypsa-eur style rule with add_electrictiy, prepare_heat (bundle) and add_heat
     # aim to make this simpler when split heat as rule.
@@ -449,6 +506,21 @@ if config["foresight"] in ["overnight"]:
         resources: mem_mb=10000
         script: "scripts/prepare_network.py"
 
+
+    # Only create sector network rule if electric vehicles are enabled
+    if config.get("sectors", {}).get("electric_vehicles", False):
+        rule add_sectors:
+            input:
+                network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}.nc',
+                transport_demand_passenger=DERIVED_DATA + "/transport/charging_demand_passenger_{planning_horizons}.csv",
+                transport_demand_freight=DERIVED_DATA + "/transport/charging_demand_freight_{planning_horizons}.csv",
+            output:
+                network=RESULTS_DIR+ '/prenetworks-sector/ntwk_{planning_horizons}.nc',
+            threads: 1
+            resources: mem_mb=8000
+            script: "scripts/add_sectors.py"
+
+
     paidoff_caps = DERIVED_DATA + "/remind/harmonized_capacities/paid_off_capacities_{cluster_id}.csv" if IS_COUPLED_RUN else []
     # only called if brownfield addition is desired
     rule add_existing_baseyear:
@@ -477,7 +549,7 @@ if config["foresight"] in ["overnight"]:
         log:
             solver = LOG_DIR + "/solve_network_postnetworks/ntwk_{planning_horizons}_{cluster_id}.log"
         threads: 4
-        resources: mem_mb=35000
+        resources: mem_mb=90000
         script: "scripts/solve_network.py"
 
 
@@ -521,7 +593,9 @@ onerror:
 onsuccess:
     res_dir = expand(RESULTS_DIR, **config["scenario"])[0]
     try:
+        import os
+        os.makedirs(res_dir, exist_ok=True)
         with open(res_dir + "/run_config.yaml", "w") as f:
             yaml.dump(config, f )
-    except TypeError as e:
+    except (TypeError, FileNotFoundError) as e:
         logging.warning(f"Could not copy config file: {e}")
