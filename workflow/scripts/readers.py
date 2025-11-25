@@ -160,7 +160,9 @@ def read_yearly_load_projections(
     return yearly_proj * conversion
 
 
-def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: str) -> gpd.GeoDataFrame:
+def merge_w_admin_l2(
+    data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: str
+) -> gpd.GeoDataFrame:
     """Merge data with admin level 2 shapes.
     1. Merge on Chinese names (NL_NAME_2).
     2. Merge on English names (NAME_2) for missing values.
@@ -187,7 +189,7 @@ def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: s
         left_on=["NL_NAME_2", "NAME_1"],
         right_on=["NL_NAME_2", "NAME_1"],
         how="left",
-        suffixes=("", "_y")
+        suffixes=("", "_y"),
     )
 
     missing = merged.NAME_2_y.isna()
@@ -199,15 +201,14 @@ def merge_w_admin_l2(data: pd.DataFrame, admin_l2: gpd.GeoDataFrame, data_col: s
         left_on=["NAME_2", "NAME_1"],
         right_on=["NAME_2", "NAME_1"],
         how="left",
-        suffixes=("", "_y")
+        suffixes=("", "_y"),
     )
     fixed.index = merged.loc[missing].index
     merged.loc[missing, [data_col, "NAME_2_y"]] = fixed[[data_col, "NAME_2"]]
     still_missing = merged.NAME_2_y.isna()
     if still_missing.sum() > 0:
         logger.warning(
-            f"Could not find {data_col} data for "
-            f"{still_missing.sum()} admin level 2 regions."
+            f"Could not find {data_col} data for " f"{still_missing.sum()} admin level 2 regions."
         )
 
     # now merge any split geometries

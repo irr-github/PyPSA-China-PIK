@@ -49,7 +49,10 @@ def build_capacities(powerplant_table: pd.DataFrame, cost_data: pd.DataFrame) ->
         pd.DataFrame: DataFrame with existing capacities
     """
 
-    powerplant_table.rename(columns={"capacity": "Capacity", "Type": "Fueltype"}, inplace=True)
+    powerplant_table.rename(
+        columns={"capacity": "Capacity", "Capacity (MW)": "Capacity", "Type": "Fueltype"},
+        inplace=True,
+    )
 
     df = powerplant_table.merge(cost_data, how="left", left_on=["Tech"], right_index=True)
     df2 = powerplant_table.merge(cost_data, how="left", left_on=["Fueltype"], right_index=True)
@@ -117,6 +120,10 @@ def load_powerplants(path: os.PathLike, plan_year: int) -> pd.DataFrame:
     ppl_data["Retired year"].fillna(1e5, inplace=True)
     ppl_data = ppl_data.query("`Start year`<= @plan_year and `Retired year` > @plan_year")
 
+    # for coupling with REMIND
+    if "remind_year" in ppl_data.columns:
+        ppl_data = ppl_data.query("remind_year == @plan_year")
+
     ppl_table = (
         (
             ppl_data.pivot_table(
@@ -141,9 +148,10 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "prepare_baseyear_capacities",
             topology="current+FCG",
-            co2_pathway="SSP2-PkBudg1000-pseudo-coupled",
+            co2_pathway="TEST_REMIND_PKBUDG1000-CHA",
             planning_horizons="2025",
             heating_demand="positive",
+            cluster_id="IM2XJ4",
             # configfiles="resources/tmp/pseudo_coupled.yml",
         )
 
@@ -160,7 +168,11 @@ if __name__ == "__main__":
     n_years = determine_simulation_timespan(snakemake.config, baseyear)
     costs = load_costs(tech_costs, config["costs"], config["electricity"], baseyear, n_years)
 
-    ppl_table = load_powerplants(snakemake.input.cleaned_ppls, year)
+    if snakemake.input.get("remind_ppls"):
+        powerplant_data = snakemake.input.remind_ppls
+    else:
+        powerplant_data = snakemake.input.cleaned_ppls
+    ppl_table = load_powerplants(powerplant_data, year)
 
     techs = snakemake.params["techs"]
     # TODO check whether it shouldn't use the carrier map

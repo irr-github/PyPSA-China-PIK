@@ -17,7 +17,7 @@ COST_UNIT = 1
 
 CURRENCY = "Eur"  # 2015
 COST_YEAR = 2015
-YUAN_TO_EUR = 0.14 # average 2015
+YUAN_TO_EUR = 0.14  # average 2015
 
 # ==== data inputs ====
 # TODO move to config
@@ -31,10 +31,12 @@ TIMEZONE = "Asia/Shanghai"
 # THIS is used to heating demand and is a bit of a problem since currently all are set to
 # the administrative timezone and not the geo timezoones
 
-PROV_RENAME_MAP = {"Inner Mongolia": "InnerMongolia",
-                   "Inner-Mongolia": "InnerMongolia",
-                   "Ningxia Hui": "Ningxia",
-                   "Xizang": "Tibet"}
+PROV_RENAME_MAP = {
+    "Inner Mongolia": "InnerMongolia",
+    "Inner-Mongolia": "InnerMongolia",
+    "Ningxia Hui": "Ningxia",
+    "Xizang": "Tibet",
+}
 
 
 REGIONAL_GEO_TIMEZONES_DEFAULT = {
@@ -71,36 +73,13 @@ REGIONAL_GEO_TIMEZONES_DEFAULT = {
     "Zhejiang": TIMEZONE,
 }
 
-
-# TODO really ugly, load the REGIONAL_GEO_TIMEZONES_DEFAULT from a file
-# use different file for tests
-def get_province_names() -> list:
-    """HACK to make it possible for pytest to generate a smaller network
-
-    Raises:
-        ValueError: if the PROV_NAMES is not a list or str
-
-    Returns:
-        list: the province node names to build the network
-    """
-    default_prov_names = list(REGIONAL_GEO_TIMEZONES_DEFAULT)
-    _provs = os.getenv("PROV_NAMES", default_prov_names)
-    if isinstance(_provs, str):
-        _provs = re.findall(r"[\w']+", _provs)
-        if not _provs:
-            xpected = '["region1", ...]'
-            err = f"Environment var PROV_NAMES {_provs} for tests did not have expected format: "
-            raise ValueError(err + xpected)
-    elif not isinstance(_provs, list):
-        raise ValueError("PROV_NAMES must be a list or str")
-    return _provs
+PROV_NAMES = list(REGIONAL_GEO_TIMEZONES_DEFAULT)
 
 
 def filter_buses(names) -> list:
     return [name for name in names if name in PROV_NAMES]
 
 
-PROV_NAMES = get_province_names()
 REGIONAL_GEO_TIMEZONES = {
     k: v for k, v in REGIONAL_GEO_TIMEZONES_DEFAULT.items() if k in PROV_NAMES
 }
@@ -224,5 +203,5 @@ CHINA_INFLATION = {
     2021: 0.98,
     2022: 1.97,
     2023: 0.23,
-    2024: 0.22
+    2024: 0.22,
 }

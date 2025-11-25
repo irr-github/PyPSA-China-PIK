@@ -159,7 +159,16 @@ class ETLRunner:
         Returns:
             pd.DataFrame: The result of the ETL step.
         """
+
+        empty_data = any([frames[k].empty for k in frames])
+        if empty_data:
+            logger.warning(
+                f"One or more input frames for ETL step '{step.name}' are empty. "
+                "Check the loaded data."
+            )
+
         method = step.name if not step.method else step.method
+        logger.info(f"Method available: {ETL_REGISTRY[method]}")
         func = ETL_REGISTRY.get(method)
         if not func:
             raise ValueError(f"ETL method '{method}' not found in registry.")
@@ -186,7 +195,7 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = setup._mock_snakemake(
             "transform_remind_data",
-            co2_pathway="SSP2-PkBudg1000_CHA_adjcost",
+            co2_pathway="SSP2-PkBudg1000-CHA",
             topology="current+FCG",
             configfiles="resources/tmp/remind_coupled_cg.yaml",
             heating_demand="positive",

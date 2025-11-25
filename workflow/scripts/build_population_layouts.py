@@ -352,6 +352,7 @@ if __name__ == "__main__":
 
         snakemake = mock_snakemake(
             "build_population_layouts",
+            configfiles="tests/failed_test_config_c12b88ce935c2e4988e581332e0281b5697d8b4167d48ae58939513f7f409b4b.yaml",
         )
 
     configure_logging(snakemake, logger=logger)
@@ -364,13 +365,18 @@ if __name__ == "__main__":
     population_provs = read_generic_province_data(
         snakemake.input.province_populations, index_col=0, index_name="province"
     )
+    # remove unused provinces (e.g. for testing)
+    population_provs = population_provs.query("index not in @snakemake.params.exclude_provinces")
+    province_shapes = province_shapes.query("index not in @snakemake.params.exclude_provinces")
+    admin2_shapes = admin2_shapes.query("NAME_1 not in @snakemake.params.exclude_provinces")
+    urban_frac = read_generic_province_data(
+        snakemake.input.urban_percent, index_col=0, index_name="province"
+    ).query("index not in @snakemake.params.exclude_provinces")
+    
     population_provs = population_provs[str(pop_year)] * snakemake.params.pop_conversion
     if not population_provs.sum() > 1e9:
         logger.warning("Low population count, check headcount conversion")
 
-    urban_frac = read_generic_province_data(
-        snakemake.input.urban_percent, index_col=0, index_name="province"
-    )
     urban_frac = urban_frac[str(pop_year)] / 100
 
     # merge population and geometry

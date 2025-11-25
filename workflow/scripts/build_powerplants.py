@@ -133,6 +133,34 @@ def clean_gem_data(gem_data: pd.DataFrame, gem_cfg: dict) -> pd.DataFrame:
     return GEM.dropna(subset=["Type"])
 
 
+def convert_CHP_to_poweronly(capacities: pd.DataFrame) -> pd.DataFrame:
+    """Convert CHP capacities to power-only capacities by removing the heat part
+
+    Args:
+        capacities (pd.DataFrame): DataFrame with existing capacities
+    Returns:
+        pd.DataFrame: DataFrame with converted capacities
+    """
+    # Convert CHP to power-only by removing the heat part
+    chp_mask = capacities.Tech.str.contains("CHP")
+    capacities.loc[chp_mask, "Fueltype"] = (
+        capacities.loc[chp_mask, "Fueltype"]
+        .str.replace("coal CHP", "coal")
+        .replace("CHP coal", "coal")
+        .str.replace("CHP gas", "gas CCGT")
+        .replace("gas CHP", "gas CCGT")
+    )
+    # update the Tech field based on the converted Fueltype
+    capacities.loc[chp_mask, "Tech"] = (
+        capacities.loc[chp_mask, "Fueltype"]
+        .str.replace(" CHP", "")
+        .str.replace("CHP ", " ")
+        .str.replace("gas ", "")
+        .str.replace("coal power plant", "coal")
+    )
+    return capacities
+
+
 def assign_year_bins(df: pd.DataFrame, year_bins: list, base_year=2020) -> pd.DataFrame:
     """
     Group the DataFrame by year bins.
@@ -247,6 +275,7 @@ if __name__ == "__main__":
             topology="current+FCG",
             co2_pathway="exp175default",
             planning_horizons="2020",
+            cluster_id="IM2XJ4",
             # configfiles="resources/tmp/remind_coupled.yaml",
         )
 
@@ -277,6 +306,7 @@ if __name__ == "__main__":
     nodes = gpd.read_file(snakemake.input.nodes)
     offshore_nodes = gpd.read_file(snakemake.input.offshore_nodes)
     ppls = assign_node_from_gps(cleaned, nodes, offshore_nodes)
+    ppls.loc[:, "Type"] = ppls.Type.str.replace(" CHP", "").str.replace("CHP ", "")
 
     ppls.to_csv(
         output_paths["cleaned_ppls"],

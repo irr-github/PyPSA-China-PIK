@@ -16,6 +16,9 @@ import pytest
 # Test the workflow for different foresights, years and time resolutions
 # serial needed as snakemake locks directory
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
 
 def copy_failed_config(cfg_path: os.PathLike) -> str:
     """Copy a failed config for local debugging
@@ -26,7 +29,9 @@ def copy_failed_config(cfg_path: os.PathLike) -> str:
     Returns:
         str: the hash id of the config
     """
-    hash_id = sha256(cfg_path.encode()).hexdigest()
+    logger.debug("Copying failed config for debugging: %s", cfg_path)
+    cfg_path_str = str(cfg_path)
+    hash_id = sha256(cfg_path_str.encode()).hexdigest()
     failed_test_config_path = f"tests/failed_test_config_{hash_id}.yaml"
     shutil.copy(cfg_path, failed_test_config_path)
     return hash_id
@@ -48,37 +53,31 @@ def launch_subprocess(cmd: str, env=None) -> subprocess.CompletedProcess:
         logging.info("\n\t".join(res.stdout.split("\n")))
         logging.info(f"return code: {res.returncode}")
         logging.info(f"====== stderr ====== :\n {'\n\t'.join(res.stderr.split('\n'))}")
+        return res
     except subprocess.CalledProcessError as e:
         logging.error(e.stderr)
         logging.error(e)
-        assert False, "Workflow integration test failed"
-    return res
+        # Return the failed process info instead of raising assertion
+        return subprocess.CompletedProcess(
+            args=e.cmd, returncode=e.returncode, stdout=e.stdout, stderr=e.stderr
+        )
 
 
 # TODO: add existing baseyear, add remind_coupled, add_plotting
 @pytest.mark.parametrize(
     "make_test_config_file",
     [
-        (
+        pytest.param(
             {
                 "time_res": 1752,
                 "plan_year": 2040,
                 "heat_coupling": True,
                 "foresight": "overnight",
                 "existing_capacities": {"add": False},
-            }
+            },
+            id="heat_2040",
         ),
-        # currently broken (fix coming)
-        # (
-        #     {
-        #         "time_res": 24,
-        #         "plan_year": 2060,
-        #         "heat_coupling": True,
-        #         "foresight": "myopic",
-        #         "existing_capacities": {"add": False},
-        #     }
-        # ),
-        (
+        pytest.param(
             {
                 "time_res": 5,
                 "start_d": "02-02 00:00",
@@ -87,27 +86,28 @@ def launch_subprocess(cmd: str, env=None) -> subprocess.CompletedProcess:
                 "heat_coupling": False,
                 "foresight": "overnight",
                 "existing_capacities": {"add": False},
-            }
+            },
+            id="5_hr_no_heat_2060",
         ),
-        # Test with existing capacities enabled
-        (
+        pytest.param(
             {
                 "time_res": 1752,
                 "plan_year": 2050,
                 "heat_coupling": True,
                 "foresight": "overnight",
                 "existing_capacities": {"add": True},
-            }
+            },
+            id="with_existing_capacities_2050",
         ),
-        # Test REMIND coupling without transport (using mock data)
-        (
+        pytest.param(
             {
                 "time_res": 1752,
                 "plan_year": 2030,
                 "heat_coupling": False,
                 "foresight": "overnight",
                 "run": {"is_remind_coupled": True},
-            }
+            },
+            id="remind_coupled_2030",
         ),
     ],
     indirect=True,
@@ -118,6 +118,7 @@ def test_dry_run(make_test_config_file):
     cmd = f"snakemake --configfile {cfg} -n -f"
     cmd += " --rerun-incomplete"
     res = launch_subprocess(cmd)
+    hash_id = None
     if res.returncode != 0:
         hash_id = copy_failed_config(cfg)
     assert res.returncode == 0, f"Snakemake dry run failed, config id {hash_id}"
@@ -126,13 +127,16 @@ def test_dry_run(make_test_config_file):
 @pytest.mark.parametrize(
     "make_test_config_file",
     [
-        {
-            "time_res": 1752,
-            "plan_year": 2040,
-            "heat_coupling": True,
-            "foresight": "overnight",
-            "existing_capacities": {"add": False},
-        }
+        pytest.param(
+            {
+                "time_res": 1752,
+                "plan_year": 2040,
+                "heat_coupling": True,
+                "foresight": "overnight",
+                "existing_capacities": {"add": False},
+            },
+            id="build_cutouts_2040",
+        )
     ],
     indirect=True,
 )
@@ -143,6 +147,7 @@ def test_dry_run_build_cutouts(make_test_config_file):
     cmd += ' -n --config \'enable={"build_cutout: 1","retrieve_cutout: 1","retrieve_raster: 1"}\''
 
     res = launch_subprocess(cmd)
+    hash_id = None
     if res.returncode != 0:
         hash_id = copy_failed_config(cfg)
     assert res.returncode == 0, f"Snakemake dry run w build cutouts failed, config id {hash_id}"
@@ -152,13 +157,16 @@ def test_dry_run_build_cutouts(make_test_config_file):
 @pytest.mark.parametrize(
     "make_test_config_file",
     [
-        {
-            "time_res": 8,
-            "plan_year": 2040,
-            "heat_coupling": True,
-            "foresight": "overnight",
-            "existing_capacities": {"add": False},
-        }
+        pytest.param(
+            {
+                "time_res": 8,
+                "plan_year": 2040,
+                "heat_coupling": True,
+                "foresight": "overnight",
+                "existing_capacities": {"add": False},
+            },
+            id="full_workflow_test_2040",
+        )
     ],
     indirect=True,
 )
@@ -174,13 +182,12 @@ def test_workflow(make_test_config_file):
 
     env = os.environ.copy()
     # make smaller network by limiting province sizes
-    env["PROV_NAMES"] = '["Anhui", "Jiangsu", "Shanghai"]'  # Override CONST1
-    env["IS_TEST"] = "1"
     cfg = make_test_config_file
     # snakemake command to test up to prepare network
     cmd = f"snakemake --configfile {cfg}"
     cmd += " --rerun-incomplete --cores 2"
     res = launch_subprocess(cmd, env)
+    hash_id = None
     if res.returncode != 0:
         hash_id = copy_failed_config(cfg)
     assert res.returncode == 0, f"Snakemake run failed, config id {hash_id}"

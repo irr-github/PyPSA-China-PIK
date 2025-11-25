@@ -126,6 +126,7 @@ if __name__ == "__main__":
             heating_demand="positive",
             topology="Current+Neigbor",
             co2_pathway="exp175default",
+            configfiles="tests/failed_test_config_c12b88ce935c2e4988e581332e0281b5697d8b4167d48ae58939513f7f409b4b.yaml"
         )
 
     configure_logging(snakemake, logger=logger)

@@ -655,6 +655,7 @@ def add_paid_off_capacity(
     paid_off = paid_off.explode("techs")
     paid_off["carrier"] = paid_off.techs.str.replace("'", "")
     paid_off.set_index("carrier", inplace=True)
+    paid_off.rename(columns={"Capacity (MW)": "Capacity"}, inplace=True)
     # clip small capacities
     paid_off["p_nom_max"] = paid_off.Capacity.apply(lambda x: 0 if x < cutoff else x)
     paid_off.drop(columns=["Capacity", "techs"], inplace=True)
@@ -755,7 +756,7 @@ if __name__ == "__main__":
         snakemake = mock_snakemake(
             "add_existing_baseyear",
             topology="current+FCG",
-            co2_pathway="exp175default",
+            co2_pathway="TEST_REMIND_PKBUDG1000-CHA",
             planning_horizons="2050",
             cluster_id="IM2XJ4",
             # configfiles="resources/tmp/pseudo_coupled.yml",
@@ -788,17 +789,6 @@ if __name__ == "__main__":
     costs = load_costs(tech_costs, config["costs"], config["electricity"], plan_year, n_years)
 
     existing_capacities = pd.read_csv(snakemake.input.installed_capacities, index_col=0)
-
-    # TODO check needed for coupled mode
-    # existing_capacities = filter_brownfield_capacities(existing_capacities, plan_year)
-    # In coupled mode, capacities from REMIND are passed to PyPSA for each plan year.
-    #  The harmonized capacities file then has an extra 'year' column to keep track
-    #  of the model year (needed because REMIND can actively retire). Select year here
-    if (
-        config["run"].get("is_remind_coupled", False)
-        or "remind_year" in existing_capacities.columns
-    ):
-        existing_capacities = existing_capacities.query("remind_year == @plan_year")
 
     network_carriers = (
         n.generators.carrier.unique().tolist()

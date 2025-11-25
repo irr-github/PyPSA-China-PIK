@@ -2,7 +2,7 @@
 Prepare remind outputs for pypsa-coupled runs using the Remind-PyPSA-coupling package
 """
 
-REMIND_REGION = config["run"].get("remind", {}).get("region")
+REMIND_REGION = config["run"].get("remind", {}).get("region", "CHA")
 
 
 rule build_run_config:
@@ -18,7 +18,7 @@ rule build_run_config:
         expname_max_len=20,
         currency_conv=0.912,
     input:
-        remind_output=config["paths"].get("remind_outpt_dir", "dummy.yaml"),
+        remind_output=config["paths"].get("remind_outpt_dir", []),
         config_template="config/templates/remind_cpled.yml",
     output:
         coupled_config="resources/tmp/remind_coupled.yaml",
@@ -40,7 +40,7 @@ rule transform_remind_data:
         use_gdx=False,
     input:
         pypsa_costs=path_manager.costs_dir(ignore_remind=True),
-        remind_output_dir=config["paths"].get("remind_outpt_dir", "dummy"),
+        remind_output_dir=config["paths"].get("remind_outpt_dir", []),
     output:
         **{
             f"costs_{yr}": DERIVED_DATA + f"/remind/costs/costs_{yr}.csv"
@@ -67,18 +67,21 @@ rule disaggregate_remind_data:
         reference_load_year=2025,
         expand_dirs=config["scenario"]["planning_horizons"],
     input:
-        pypsa_powerplants=DERIVED_DATA + f"/existing_infrastructure/capacities.csv",
+        pypsa_powerplants=DERIVED_COMMON
+        + "/existing_infrastructure/capacity_cleaned_{cluster_id}.csv",
         remind_caps=DERIVED_DATA + "/remind/preinv_capacities.csv",
         remind_tech_groups=DERIVED_DATA + "/remind/tech_groups.csv",
         loads=DERIVED_DATA + "/remind/yrly_loads.csv",
         # todo switch to default?
         reference_load="resources/data/load/Provincial_Load_2020_2060_MWh.csv",
     output:
-        capacities=DERIVED_DATA + "/remind/harmonized_capacities/capacities.csv",
-        paid_off=DERIVED_DATA + "/remind/harmonized_capacities/paid_off_capacities.csv",
-        disagg_load=DERIVED_DATA + "/remind/ac_load_disagg.csv",
+        capacities=DERIVED_DATA
+        + "/remind/harmonized_capacities/capacities_s_{cluster_id}.csv",
+        paid_off=DERIVED_DATA
+        + "/remind/harmonized_capacities/paid_off_capacities_{cluster_id}.csv",
+        disagg_load=DERIVED_DATA + "/remind/ac_load_disagg_{cluster_id}.csv",  # dummy wild card to avoid issues, downscale only province
     log:
-        LOG_DIR + "/remind_coupling/disaggregate_data.log",
+        LOG_DIR + "/remind_coupling/disaggregate_data_{cluster_id}.log",
     conda:
         "remind-coupling"
     script:

@@ -59,7 +59,7 @@ def cut_smaller_from_larger(
 
 
 def find_seaside_regions(
-    regions: gpd.GeoDataFrame, eez: gpd.GeoDataFrame, max_dist=2, precision_deg = 0.5, tolerance=10
+    regions: gpd.GeoDataFrame, eez: gpd.GeoDataFrame, max_dist=2, precision_deg=0.5, tolerance=10
 ) -> gpd.GeoDataFrame:
     """find seaside regions (within max_dist of the eez)
 
@@ -177,7 +177,10 @@ def split_eez_by_region(
 if __name__ == "__main__":
     # Detect running outside of snakemake and mock snakemake for testing
     if "snakemake" not in globals():
-        snakemake = mock_snakemake("build_shapes")
+        snakemake = mock_snakemake(
+            "build_shapes",
+            configfiles="tests/failed_test_config_c12b88ce935c2e4988e581332e0281b5697d8b4167d48ae58939513f7f409b4b.yaml",
+        )
     configure_logging(snakemake, logger=logger)
 
     L2_KEY = "NAME_2"
@@ -223,4 +226,6 @@ if __name__ == "__main__":
 
     gdp_regions.to_file(snakemake.output.regions_w_gdp, driver="GeoJSON")
 
-    logger.info("Successfully built shapes \n\t- Offshore shapes saved to {snakemake.output.offshore_shapes} \n\t- GDP regions saved to {snakemake.output.regions_w_gdp}")
+    logger.info(
+        "Successfully built shapes \n\t- Offshore shapes saved to {snakemake.output.offshore_shapes} \n\t- GDP regions saved to {snakemake.output.regions_w_gdp}"
+    )

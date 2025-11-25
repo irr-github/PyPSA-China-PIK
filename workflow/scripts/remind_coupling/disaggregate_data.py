@@ -83,10 +83,11 @@ if __name__ == "__main__":
     if "snakemake" not in globals():
         snakemake = setup._mock_snakemake(
             "disaggregate_remind_data",
-            co2_pathway="SSP2-PkBudg1000-CHA-pypsaelh2_higheradj_085",
+            co2_pathway="SSP2-PkBudg1000-CHA",
             topology="current+FCG",
-            config_files="resources/tmp/remind_coupled_cg.yaml",
+            configfiles="resources/tmp/remind_coupled_cg.yaml",
             heating_demand="positive",
+            cluster_id="IM2XJ4",
         )
     configure_logging(snakemake)
     logger.info("Running disaggregation script")
@@ -99,7 +100,10 @@ if __name__ == "__main__":
         raise ValueError("Aborting: No REMIND data ETL config provided")
 
     # ================ Load data ===============
-    input_files = {k: v for k, v in snakemake.input.items() if not os.path.isdir(v)}
+    input_files = dict(snakemake.input)
+    input_files = {
+        k: v for k, v in input_files.items() if not (os.path.isdir(v) or isinstance(v, list))
+    }
     readers = {"reference_load": read_yearly_load_projections, "default": pd.read_csv}
 
     # read files (and not directories)
@@ -117,7 +121,7 @@ if __name__ == "__main__":
             "PyPSA tech groups are not unique. Check the remind_tech_groups.csv"
             " file for remind techs that appear in multiple pypsa techs"
         )
-    data["pypsa_capacities"]["tech_group"] = data["pypsa_capacities"].Tech.map(pypsa_tech_groups)
+    data["pypsa_capacities"]["tech_group"] = data["pypsa_capacities"].Type.map(pypsa_tech_groups)
     data["pypsa_capacities"].fillna({"tech_group": ""}, inplace=True)
 
     logger.info(f"Loaded data files {data.keys()}")
@@ -147,6 +151,7 @@ if __name__ == "__main__":
             result = ETLRunner.run(
                 step, data["remind_caps"], harmonized_pypsa_caps=results["harmonize_model_caps"]
             )
+
         else:
             result = ETLRunner.run(step, data)
 
@@ -163,6 +168,13 @@ if __name__ == "__main__":
         )
     if "harmonize_model_caps" in results:
         logger.info("Exporting harmonized model capacities")
+        drop_columns = [
+            "Subregion",
+            "Region",
+            "Local area (taluk, county)",
+            "Major area (prefecture, district)",
+        ]
+        results["harmonize_model_caps"].drop(columns=drop_columns, inplace=True)
         results["harmonize_model_caps"].to_csv(outp_files["capacities"], index=False)
 
     if "available_cap" in results:

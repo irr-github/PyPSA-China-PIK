@@ -409,7 +409,7 @@ class PathManager:
         default = "resources/data/load/Provincial_Load_2020_2060_MWh.csv"
         # if remind coupling is enabled, use the remind data
         if self.config["run"].get("is_remind_coupled", False) and not ignore_remind:
-            default = self.derived_data_dir() + "/remind/ac_load_disagg.csv"
+            default = self.derived_data_dir() + "/remind/ac_load_disagg_{cluster_id}.csv"
 
         loads = self.config["paths"].get("yearly_regional_load", {"ac": default})
         if not loads["ac"]:

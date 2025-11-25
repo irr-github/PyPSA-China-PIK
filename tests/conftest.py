@@ -12,7 +12,7 @@ import pytest
 import yaml
 
 # from filelock import BaseFileLock
-from constants import TESTS_CUTOUT, TESTS_RUNNAME
+from constants import TESTS_CUTOUT, TESTS_RUNNAME, PROV_NAMES
 
 DEFAULT_CONFIG = pathlib.Path(pathlib.Path.cwd(), "config", "default_config.yaml")
 TECH_CONFIG = pathlib.Path(pathlib.Path.cwd(), "config", "technology_config.yaml")
@@ -134,6 +134,7 @@ def make_test_config_file(make_snakemake_test_config, tmpdir_factory, request):
     # Get parameters passed via pytest.mark.parametrize
     time_res = request.param.get("time_res", 24)
     plan_year = request.param.get("plan_year", 2040)
+    test_provinces = request.param.get("test_provinces", ["Anhui", "Jiangsu", "Hainan"])
     kwargs = {k: v for k, v in request.param.items() if k not in ["time_res", "plan_year"]}
 
     # Helper function to create a unique filename from the config arguments
@@ -148,6 +149,23 @@ def make_test_config_file(make_snakemake_test_config, tmpdir_factory, request):
 
     # Generate the test config
     test_config = make_snakemake_test_config(time_res=time_res, plan_year=plan_year, **kwargs)
+
+    # reduce problem size by limiting provinces
+    nodes_cfg = {}
+    nodes_cfg["exclude_provinces"] = [prov for prov in PROV_NAMES if prov not in test_provinces] + [
+        "Macau",
+        "HongKong",
+    ]
+    nodes_cfg["split_provinces"] = (
+        False  # split (some) provinces (admin l1) using admin l2  (counties/prefectures)
+    )
+    # exclude currently only applies if split_provinces is True, will be fixed with integration to workflow
+    nodes_cfg["splits"] = {
+        "Hainan_1": ["Haikou", "Danzhou"],
+        "Hainan_2": ["Sanya"],
+    }
+    nodes_cfg["custom_name"] = "test"
+    test_config["nodes"] = nodes_cfg
 
     # If REMIND coupling is enabled, point to mock data
     if test_config.get("run", {}).get("is_remind_coupled", False):

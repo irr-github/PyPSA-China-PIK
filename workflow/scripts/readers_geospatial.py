@@ -116,8 +116,9 @@ def read_admin2_shapes(path: str, fix=True, exclude=["Macau", "HongKong"]) -> gp
         gpd.GeoDataFrame: Preprocessed administrative level 2 shapes.
     """
 
-    admin_l2 = gpd.read_file(path).query("NAME_1 not in @exclude")
+    admin_l2 = gpd.read_file(path)
     admin_l2["NAME_1"] = admin_l2.NAME_1.map(lambda x: PROV_RENAME_MAP.get(x, x))
+    admin_l2 = admin_l2.query("NAME_1 not in @exclude")
 
     # merge geometries
     unmerged_NL = admin_l2.duplicated(subset=["NL_NAME_2", "NAME_1"], keep=False)
