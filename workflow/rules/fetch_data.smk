@@ -24,12 +24,14 @@ release_yr, rev, yr, v = (
     config["world_population_raster"]["year"],
     config["world_population_raster"]["version"],
 )
+
+
 rule fetch_gridded_population:
     params:
-        config = config["world_population_raster"],
-        base_url = f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/"
+        config=config["world_population_raster"],
+        base_url=f"https://data.worldpop.org/GIS/Population/Global_2015_2030/R{release_yr}{rev}/{yr}/CHN/v{v}/1km_ua/constrained/",
     output:
-        pop_raster= f"resources/data/population/china_world_pop_{name}.tif",
+        pop_raster=f"resources/data/population/china_world_pop_{name}.tif",
     log:
         LOGS_COMMON + "/fetch_gridded_population.log",
     script:
@@ -42,6 +44,7 @@ rule fetch_gridded_population:
 if config["enable"].get("retrieve_raster", True):
 
     rule retrieve_copernicus_land_cover:
+        """retrieve Copernicus Land Cover 100m discrete classification map from Zenodo"""
         input:
             storage.http(
                 "https://zenodo.org/records/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
@@ -53,6 +56,7 @@ if config["enable"].get("retrieve_raster", True):
             shutil.move(input[0], output[0])
 
     rule retrieve_bathymetry_raster:
+        """retrieve GEBCO 2025 bathymetry data from Zenodo bundle"""
         input:
             gebco=storage.http(
                 "https://zenodo.org/record/17697456/files/GEBCO_tiff.zip"
@@ -66,6 +70,25 @@ if config["enable"].get("retrieve_raster", True):
             with ZipFile(params.zip_file, "r") as zip_ref:
                 zip_ref.extractall(os.path.dirname(params.zip_file))
             os.remove(params.zip_file)
+
+
+
+# Fetch protected areas
+rule retrieve_natural_reserves:
+    """retrieve natural reserves from Zenodo bundle"""
+    input:
+        natural_reserves=storage.http(
+            "https://zenodo.org/records/17719794/files/protected_areas_zenodo_14875797.zip"
+        ),
+    output:
+        natural_reserves="resources/data/landuse_availability/protected_areas_zenodo_14875797",
+    params:
+        zip_file="resources/data/landuse_availability/protected_areas_zenodo_14875797.zip",
+    run:
+        os.rename(input.natural_reserves, params.zip_file)
+        with ZipFile(params.zip_file, "r") as zip_ref:
+            zip_ref.extractall(os.path.dirname(params.zip_file))
+        os.remove(params.zip_file)
 
 
 if config["enable"].get("retrieve_cutout", False) and config["enable"].get(
@@ -108,14 +131,17 @@ rule retrieve_raster_gdp:
     Not actually needed right now but kept for reference. Also possible to get data via google earth engine.
     """
     input:
-        kummu_et_al_raster_hr = storage.http("https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif"),
-        kummu_et_al_gdp_adm2 = storage.http("https://zenodo.org/records/16741980/files/rast_gdpTot_1990_2022_30arcmin.tif")
+        kummu_et_al_raster_hr=storage.http(
+            "https://zenodo.org/records/16741980/files/rast_adm2_gdp_perCapita_1990_2022.tif"
+        ),
+        kummu_et_al_gdp_adm2=storage.http(
+            "https://zenodo.org/records/16741980/files/rast_gdpTot_1990_2022_30arcmin.tif"
+        ),
     output:
-        kummu_et_al_raster = "resources/data/population/adm2_gdp_percapita_1990_2022.tif",
-        kummu_et_al_gdp_adm2 = "resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif"
+        kummu_et_al_raster="resources/data/population/adm2_gdp_percapita_1990_2022.tif",
+        kummu_et_al_gdp_adm2="resources/data/population/rast_gdpTot_1990_2022_30arcmin.tif",
     run:
         # os.makedirs(os.path.dirname(output.kummu_et_al_geo, exist_ok=True)
         shutil.move(input.kummu_et_al_raster, output.kummu_et_al_raster)
         # shutil.move(input.kummu_et_al_raster_hr, output.kummu_et_al_raster_hr)
         shutil.move(input.kummu_et_al_gdp_adm2, output.kummu_et_al_gdp_adm2)
-
