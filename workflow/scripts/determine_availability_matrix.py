@@ -60,9 +60,9 @@ if __name__ == "__main__":
     excluder = atlite.ExclusionContainer(crs=3035, res=res)
 
     if not params["natural_reserves"]:
-        protected_shp = gpd.read_file(snakemake.input["natural_reserves"])
 
         if technology == "offwind":
+            protected_shp = gpd.read_file(snakemake.input["natural_reserves"])
             protected_Marine_shp = gpd.tools.overlay(
                 protected_shp, regions.dissolve(), how="intersection"
             )
@@ -78,11 +78,7 @@ if __name__ == "__main__":
             protected_Marine_shp.to_file(TMP)
             excluder.add_geometry(TMP)
         else:
-            protected_shp = gpd.tools.overlay(
-                protected_shp, regions.dissolve(), how="intersection"
-            )
-            # TO
-            excluder.add_geometry(protected_shp)
+            excluder.add_geometry(snakemake.input["natural_reserves"])
 
     # Use Copernicus LC100 discrete classification map instead of percentage cover fractions
     # This replaces the old approach of using separate Grass/Bare/Shrubland rasters

@@ -551,7 +551,7 @@ def update_p_nom_max(n: pypsa.Network) -> None:
 
 
 def simplify_lines(lines: pd.DataFrame) -> pd.DataFrame:
-    """ USE TRANSPORT MODEL -> group everything in to dispatchable links
+    """USE TRANSPORT MODEL -> group everything in to dispatchable links
 
     Args:
         lines (pd.DataFrame): the line data
@@ -561,8 +561,10 @@ def simplify_lines(lines: pd.DataFrame) -> pd.DataFrame:
 
     sum_columns = ["type", "p_nom"]
     avg_columns = ["length"]
-    min_columns = ["capital_cost"] #, "capital_cost"]
-    other_columns = lines.columns.difference(sum_columns + avg_columns + min_columns + ["bus0", "bus1"])
+    min_columns = ["capital_cost"]  # , "capital_cost"]
+    other_columns = lines.columns.difference(
+        sum_columns + avg_columns + min_columns + ["bus0", "bus1"]
+    )
 
     agg_links = lines.groupby(["bus0", "bus1"])[sum_columns].sum()
     agg_links[avg_columns] = lines.groupby(["bus0", "bus1"])[avg_columns].mean()
