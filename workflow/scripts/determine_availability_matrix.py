@@ -63,10 +63,9 @@ if __name__ == "__main__":
 
         if technology == "offwind":
             protected_shp = gpd.read_file(snakemake.input["natural_reserves"])
-            protected_Marine_shp = gpd.tools.overlay(
+            protected_shape = gpd.tools.overlay(
                 protected_shp, regions.dissolve(), how="intersection"
             )
-            # TO
             # this is to avoid atlite complaining about parallelisation (still relevant?)
             logger.info("Creating tmp directory for protected marine shapefile")
             TMP = "resources/derived_data/tmp/atlite_protected_marine.shp"
@@ -75,7 +74,7 @@ if __name__ == "__main__":
                 mkdir(os.path.dirname(os.path.dirname(TMP)))
             if not os.path.isdir(os.path.dirname(TMP)):
                 mkdir(os.path.dirname(TMP))
-            protected_Marine_shp.to_file(TMP)
+            protected_shape.to_file(TMP)
             excluder.add_geometry(TMP)
         else:
             excluder.add_geometry(snakemake.input["natural_reserves"])
