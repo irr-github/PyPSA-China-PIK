@@ -289,7 +289,8 @@ def calc_link_length(row, network: pypsa.Network) -> float:
         row (pd.Series): the link row
         network (pypsa.Network): the network object
     """
-    from functions import haversine 
+    from functions import haversine
+
     bus0 = row["bus0"]
     bus1 = row["bus1"]
     x0, y0 = network.buses.loc[bus0, ["x", "y"]]
@@ -509,7 +510,7 @@ def make_periodic_snapshots(
     if is_leap_year(int(year)):
         snapshots = snapshots[~((snapshots.month == 2) & (snapshots.day == 29))]
     freq_hours = int("".join(filter(str.isdigit, str(freq))))
-    
+
     return snapshots[::freq_hours]  # every freq hour
 
 
