@@ -531,7 +531,7 @@ if config["foresight"] in ["overnight"]:
         input:
             network=RESULTS_DIR+ '/prenetworks/ntwk_{planning_horizons}_{cluster_id}.nc',
             tech_costs=COSTS_DATA + "/costs_{planning_horizons}.csv",
-            cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5",
+            cop_name=DERIVED_CUTOUT + "/heating/hp_cop.h5" if config["heat_coupling"] else [],
             installed_capacities = path_manager.infrastructure() + '/capacities_{planning_horizons}_{cluster_id}.csv',
             paid_off_capacities_remind = paidoff_caps,
         output: RESULTS_DIR+ '/prenetworks-brownfield/ntwk_{planning_horizons}_{cluster_id}.nc',

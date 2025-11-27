@@ -22,7 +22,7 @@ def load_costs(
     elec_config: dict,
     cost_year: int,
     n_years: int,
-    econ_lifetime=40,
+    econ_lifetime=25,
 ) -> pd.DataFrame:
     """Load techno-economic data for technologies. Calculate the anualised capex costs
       and OM costs for the technologies based on the input data

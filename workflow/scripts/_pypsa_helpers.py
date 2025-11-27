@@ -11,6 +11,8 @@ import pandas as pd
 import pypsa
 import pytz
 
+from constants import PROV_NAMES
+
 # get root logger
 logger = logging.getLogger()
 
