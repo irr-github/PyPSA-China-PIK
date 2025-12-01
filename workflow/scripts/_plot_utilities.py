@@ -310,8 +310,8 @@ def rename_index(ds: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: data w plot_friendly index
     """
-    specific = ds.index.map(lambda x: f"{x[1]}\n({x[0]})")
-    generic = ds.index.get_level_values("carrier")
+    specific = ds.index.map(lambda x: f"{x[1].capitalize()}\n({x[0]})")
+    generic = ds.index.get_level_values("carrier").map(lambda x: x.capitalize())
     duplicated = generic.duplicated(keep=False)
     index = specific.where(duplicated, generic)
     return ds.set_axis(index)
