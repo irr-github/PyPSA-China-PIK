@@ -1,5 +1,12 @@
 [
   {
+    "version": "test-release",
+    "title": "test-release",
+    "aliases": [
+      "Test Release"
+    ]
+  },
+  {
     "version": "0.0.1-test",
     "title": "0.0.1-test",
     "aliases": [
