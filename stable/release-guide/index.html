@@ -2502,8 +2502,8 @@
 </li>
 <li>Builds documentation with MkDocs</li>
 <li>Deploys to GitHub Pages using mike</li>
-<li>Updates version aliases (vX.Y.Z and latest)</li>
-<li>Sets the new version as default</li>
+<li>Creates version vX.Y.Z with alias 'stable'</li>
+<li>Sets 'stable' as the default version (releases take precedence over development)</li>
 </ol>
 <h3 id="6-verify-the-release">6. Verify the Release</h3>
 <p>After the workflows complete:</p>
@@ -2619,11 +2619,14 @@
 <a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="c1"># Delete a version</span>
 <a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>mike<span class="w"> </span>delete<span class="w"> </span>VERSION<span class="w"> </span>--push
 <a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
-<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="c1"># Deploy without updating latest alias</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="c1"># Deploy without updating any alias</span>
 <a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>mike<span class="w"> </span>deploy<span class="w"> </span>VERSION<span class="w"> </span>--push
 <a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>
-<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># Deploy and update latest alias</span>
-<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>mike<span class="w"> </span>deploy<span class="w"> </span>--update-aliases<span class="w"> </span>VERSION<span class="w"> </span>latest<span class="w"> </span>--push
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="c1"># Deploy release with stable alias (done by release workflow)</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>mike<span class="w"> </span>deploy<span class="w"> </span>--update-aliases<span class="w"> </span>VERSION<span class="w"> </span>stable<span class="w"> </span>--push
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="c1"># Deploy development with latest alias (done by docs workflow on develop)</span>
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>mike<span class="w"> </span>deploy<span class="w"> </span>--update-aliases<span class="w"> </span>dev<span class="w"> </span>latest<span class="w"> </span>--push
 </code></pre></div>
 <h3 id="local-testing">Local Testing</h3>
 <p>Test documentation builds locally before releasing:</p>
